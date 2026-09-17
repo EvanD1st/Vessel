@@ -143,7 +143,11 @@ def _exclusion(relative: str, directory: bool = False) -> str | None:
 
 
 def _identity(info: os.stat_result) -> tuple:
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+    # Use only device, inode, and size — not timestamps. Windows NTFS timestamp
+    # resolution (100 ns) and lazy-flush semantics cause spurious mismatches when
+    # a file is stat'd twice in rapid succession after a recent write. Content
+    # integrity is guaranteed by the SHA-256 digest check in _read.
+    return info.st_dev, info.st_ino, info.st_size
 
 
 def _opened_path(descriptor: int, fallback: Path) -> Path:

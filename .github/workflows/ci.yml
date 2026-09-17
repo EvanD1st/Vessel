@@ -87,9 +87,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: vessel-production
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: vessel-dashboard-release
+          path: release
       - name: Deploy tested release to the dedicated VESSEL service
         env:
           VESSEL_SSH_KEY: ${{ secrets.VESSEL_DEPLOY_SSH_KEY }}
@@ -102,5 +104,7 @@ jobs:
           printf '%s\n' "$VESSEL_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/vessel-deploy-key ~/.ssh/known_hosts
           ssh -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes ubuntu@18.175.211.11 'mkdir -p ~/vessel-staging'
-          scp -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes vessel-dashboard-release.tar.gz ubuntu@18.175.211.11:~/vessel-staging/$RELEASE_ID.tar.gz
+          scp -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes deploy/ubuntu/deploy.sh ubuntu@18.175.211.11:~/vessel-staging/vessel-deploy-$RELEASE_ID.sh
+          ssh -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes ubuntu@18.175.211.11 "sudo -n install -o root -g root -m 0755 ~/vessel-staging/vessel-deploy-$RELEASE_ID.sh /usr/local/sbin/vessel-deploy"
+          scp -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes release/vessel-dashboard-release.tar.gz ubuntu@18.175.211.11:~/vessel-staging/$RELEASE_ID.tar.gz
           ssh -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes ubuntu@18.175.211.11 "sudo -n /usr/local/sbin/vessel-deploy '$RELEASE_ID'"
