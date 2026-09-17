@@ -1,0 +1,9 @@
+**
+!package.json
+!README.md
+!dist/extension.js
+!resources/icon.svg
+!scripts/bootstrap.py
+!runtime/manifest.json
+!runtime/requirements.txt
+!runtime/wheels/*.whl

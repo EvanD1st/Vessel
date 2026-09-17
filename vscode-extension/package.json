@@ -1,0 +1,178 @@
+{
+  "name": "vessel",
+  "displayName": "VESSEL",
+  "description": "Protect your Cline tasks from interrupted sessions, provider failures and lost progress.",
+  "version": "0.2.0",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EvanD1st/Vessel.git",
+    "directory": "vscode-extension"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "VESSEL manages local owner processes and requires a trusted workspace."
+    },
+    "virtualWorkspaces": false
+  },
+  "publisher": "vessel",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "VESSEL",
+      "properties": {
+        "vessel.startOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Reconnect VESSEL for an explicitly configured workspace. Never binds a new Cline task or replays work."
+        },
+        "vessel.stopOnClose": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Stop local VESSEL processes when this VS Code window closes. Native Cline work is not stopped or attested."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "vessel.bindSession",
+        "title": "VESSEL: Bind Observed Cline Task"
+      },
+      {
+        "command": "vessel.configureCline",
+        "title": "VESSEL: Configure Cline Inference"
+      },
+      {
+        "command": "vessel.confirmRecovery",
+        "title": "VESSEL: Confirm Observed Continuation"
+      },
+      {
+        "command": "vessel.manageTasks",
+        "title": "VESSEL: Record Task"
+      },
+      {
+        "command": "vessel.rollbackSetup",
+        "title": "VESSEL: Roll Back Setup"
+      },
+      {
+        "command": "vessel.openLogs",
+        "title": "VESSEL: Open Logs"
+      },
+      {
+        "command": "vessel.openGuide",
+        "title": "VESSEL: Open Setup Guide"
+      },
+      {
+        "command": "vessel.setup",
+        "title": "VESSEL: Set Up VESSEL"
+      },
+      {
+        "command": "vessel.protectWorkspace",
+        "title": "VESSEL: Protect Current Workspace"
+      },
+      {
+        "command": "vessel.showStatus",
+        "title": "VESSEL: Show Status"
+      },
+      {
+        "command": "vessel.createCheckpoint",
+        "title": "VESSEL: Create Checkpoint"
+      },
+      {
+        "command": "vessel.recoverTask",
+        "title": "VESSEL: Recover Interrupted Task"
+      },
+      {
+        "command": "vessel.pauseProtection",
+        "title": "VESSEL: Pause Protection"
+      },
+      {
+        "command": "vessel.resumeProtection",
+        "title": "VESSEL: Resume Protection"
+      },
+      {
+        "command": "vessel.restartCompanion",
+        "title": "VESSEL: Restart Companion"
+      },
+      {
+        "command": "vessel.replaceOrbioKey",
+        "title": "VESSEL: Replace Orbio Key"
+      },
+      {
+        "command": "vessel.forgetOrbioKey",
+        "title": "VESSEL: Forget Orbio Key"
+      },
+      {
+        "command": "vessel.reviewCompatibility",
+        "title": "VESSEL: Review Cline Compatibility"
+      },
+      {
+        "command": "vessel.restoreOriginal",
+        "title": "VESSEL: Restore Original Cline Files"
+      },
+      {
+        "command": "vessel.removeWorkspace",
+        "title": "VESSEL: Remove From Workspace"
+      },
+      {
+        "command": "vessel.openDiagnostic",
+        "title": "VESSEL: Open Diagnostic Report"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vessel-explorer",
+          "title": "VESSEL",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vessel-explorer": [
+        {
+          "id": "vessel.welcomeView",
+          "type": "webview",
+          "name": "Welcome"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
+    "lint": "oxlint src --deny-warnings",
+    "package:vsix": "vsce package --no-dependencies --out vessel-0.2.0.vsix",
+    "test:package": "node scripts/verify-package.cjs",
+    "watch": "tsc -watch -p ./",
+    "package": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "pretest": "npm run compile && npm run package",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.9",
+    "@vscode/vsce": "3.6.2",
+    "esbuild": "0.28.2",
+    "glob": "^13.0.6",
+    "mocha": "^12.0.1",
+    "oxlint": "1.76.0",
+    "typescript": "^5.x"
+  }
+}

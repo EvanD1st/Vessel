@@ -31,11 +31,76 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.15.0'
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
       - run: npm run test:pairing
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npm run build:selfhost
+      - run: npm run test:selfhost
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:setup-guide
+      - run: tar -czf ../vessel-dashboard-release.tar.gz -C dist/standalone .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vessel-dashboard-release
+          path: vessel-dashboard-release.tar.gz
+          retention-days: 7
+
+  extension:
+    runs-on: windows-latest
+    env:
+      VESSEL_TEST_PYTHON: python
+    defaults:
+      run:
+        working-directory: vscode-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: python scripts/build-runtime.py
+      - run: npm run compile
+      - run: npm run lint
+      - run: npm test
+      - run: npm run package:vsix
+      - run: npm run test:package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vessel-extension-vsix
+          path: vscode-extension/vessel-0.2.0.vsix
+          retention-days: 7
+
+  deploy-dashboard:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VESSEL_DEPLOY_ENABLED == 'true'
+    needs: [python, dashboard, extension]
+    runs-on: ubuntu-latest
+    environment: vessel-production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vessel-dashboard-release
+      - name: Deploy tested release to the dedicated VESSEL service
+        env:
+          VESSEL_SSH_KEY: ${{ secrets.VESSEL_DEPLOY_SSH_KEY }}
+          VESSEL_KNOWN_HOSTS: ${{ secrets.VESSEL_DEPLOY_KNOWN_HOSTS }}
+          RELEASE_ID: ${{ github.sha }}
+        run: |
+          test -n "$VESSEL_SSH_KEY" && test -n "$VESSEL_KNOWN_HOSTS"
+          mkdir -m 700 -p ~/.ssh
+          printf '%s\n' "$VESSEL_SSH_KEY" > ~/.ssh/vessel-deploy-key
+          printf '%s\n' "$VESSEL_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/vessel-deploy-key ~/.ssh/known_hosts
+          ssh -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes ubuntu@18.175.211.11 'mkdir -p ~/vessel-staging'
+          scp -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes vessel-dashboard-release.tar.gz ubuntu@18.175.211.11:~/vessel-staging/$RELEASE_ID.tar.gz
+          ssh -i ~/.ssh/vessel-deploy-key -o StrictHostKeyChecking=yes ubuntu@18.175.211.11 "sudo -n /usr/local/sbin/vessel-deploy '$RELEASE_ID'"

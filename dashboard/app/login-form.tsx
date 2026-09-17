@@ -1,4 +1,6 @@
 'use client';
+
+import Link from 'next/link';
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -78,8 +80,8 @@ export default function LoginForm() {
           </Button>
         </form>
         <small>
-          Invite-only access. Need an account or a password reset? Contact your
-          workspace owner.
+          Need an account or a password reset? Contact your workspace owner.<br/><br/>
+          <Link href="/setup-guide" className="underline">View setup guide</Link>
         </small>
       </section>
     </main>

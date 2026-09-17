@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth/minimal';
+import { env } from 'cloudflare:workers';
 import { admin } from 'better-auth/plugins/admin';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import { drizzle } from 'drizzle-orm/d1';
@@ -34,9 +35,42 @@ export function createAccountAuth(
     trustedOrigins: [baseURL],
     emailAndPassword: {
       enabled: true,
-      disableSignUp: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
+      requireEmailVerification: false,
+      async sendResetPassword({ user, url }) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'VESSEL <noreply@vessel-dashboard.cloud-ip.cc>',
+            to: user.email,
+            subject: 'Reset your VESSEL password',
+            html: `<p>Click the link below to reset your password:</p><p><a href="${url}">${url}</a></p>`
+          })
+        });
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: false,
+      async sendVerificationEmail({ user, url }) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'VESSEL <noreply@vessel-dashboard.cloud-ip.cc>',
+            to: user.email,
+            subject: 'Verify your VESSEL account',
+            html: `<p>Welcome to VESSEL! Click the link below to verify your email:</p><p><a href="${url}">${url}</a></p>`
+          })
+        });
+      },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

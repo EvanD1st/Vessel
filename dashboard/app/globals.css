@@ -970,3 +970,28 @@ summary {
     flex-wrap: wrap;
   }
 }
+
+.setup-guide-page { padding: 32px 16px; align-items: flex-start; }
+.setup-guide-card { width: min(100%, 760px); max-width: 760px; padding: 32px; }
+.setup-guide-kicker { margin: 24px 0 10px; letter-spacing: .14em; font-size: 12px; font-weight: 600; }
+.setup-guide-card h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.2; margin-bottom: 16px; }
+.setup-guide-card > p { line-height: 1.65; }
+.setup-guide-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 24px 0; }
+.setup-guide-controls [role="status"] { font-size: 13px; }
+.setup-guide-steps { list-style: none; padding: 0; margin: 0; }
+.setup-guide-steps li { display: flex; align-items: flex-start; gap: 16px; padding: 18px 14px; margin: 8px 0; border: 1px solid transparent; border-radius: 10px; transition: background-color .2s, border-color .2s; }
+.setup-guide-steps li[aria-current="step"] { background: #eef5f1; border-color: #b7d2c6; }
+.setup-guide-number { width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid #adc2b9; border-radius: 50%; text-align: center; line-height: 26px; }
+.setup-guide-steps h2 { font-size: 17px; font-weight: 650; margin-bottom: 6px; }
+.setup-guide-steps p { font-size: 14px; line-height: 1.6; margin: 0; }
+.setup-guide-footer { border-top: 1px solid #dce5e0; padding-top: 24px; margin-top: 24px; }
+.setup-guide-footer p { font-size: 13px; margin: 12px 0; }
+.setup-guide-footer a { text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  .setup-guide-card *, .setup-guide-card *::before, .setup-guide-card *::after { transition: none !important; animation: none !important; }
+}
+@media (max-width: 480px) {
+  .setup-guide-card { padding: 22px 16px; }
+  .setup-guide-steps li { padding: 14px 8px; gap: 10px; }
+  .setup-guide-footer button { width: 100%; white-space: normal; height: auto; min-height: 36px; }
+}

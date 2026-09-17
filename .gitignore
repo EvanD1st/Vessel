@@ -51,3 +51,9 @@ node_modules/
 .vinext/
 .wrangler/
 *.tsbuildinfo
+
+# Extension build, test profiles and pinned offline runtime artifacts
+vscode-extension/out/
+vscode-extension/.vscode-test/
+vscode-extension/runtime/
+vscode-extension/*.vsix

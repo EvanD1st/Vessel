@@ -9,15 +9,74 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 from vessel.locking import ArtifactLock
 from vessel.storage import _atomic_write, _regular_file, safe_directory
 
 ORIGINAL_SHA256 = "d07c9ff15be2952dbe95d5571f13b06edb73053d9557ef853611c3edc426b2d8"
+PATCHED_SHA256 = "445539d40ac0ac40d9b3b080ccf322101bd5b54b4ee74d17171e5c133ff0b49c"
 MAX_BUNDLE = 100 * 1024 * 1024
 MARKER = 'const __vesselCaptureBridge=require("./vessel-capture-bridge.cjs");'
 BRIDGE_NAME = "vessel-capture-bridge.cjs"
+
+
+def inspect(extension, backup=None, *, platform=None):
+    """Read-only version/build inspection. A matching version alone is insufficient."""
+    result = {
+        "version": None, "platform": platform or sys.platform, "supported": False,
+        "mode": "unsupported", "state": "unsupported", "bundle_sha256": None,
+        "original_sha256": ORIGINAL_SHA256, "compatibility_version": "3",
+        "supported_platforms": ["win32"], "reload_required": False,
+        "evidence": "docs/native-cline-live-20260913.md", "verified_date": "2026-09-14",
+        "capabilities": ["native_session_id", "native_tool_id", "observed_command_exit"],
+        "restore_available": False,
+    }
+    try:
+        package = json.loads(_regular_file(Path(extension) / "package.json", 1024 * 1024))
+        result["version"] = package.get("version")
+        bundle, bridge = paths(Path(extension))
+        current = _regular_file(bundle, MAX_BUNDLE)
+        result["bundle_sha256"] = sha(current)
+        if result["platform"] != "win32":
+            return result
+        helper = Path(__file__).with_name("cline_bridge.cjs").read_bytes()
+        expected = PATCHED_SHA256
+        if backup and (Path(backup) / "patch.json").exists():
+            original = _regular_file(Path(backup) / "extension.js.original", MAX_BUNDLE)
+            receipt = json.loads(_regular_file(Path(backup) / "patch.json", 16384))
+            expected = sha(patched_bundle(original))
+            result["restore_available"] = (
+                receipt.get("bundle") == str(bundle)
+                and receipt.get("patched_sha256") == expected
+                and receipt.get("bridge_sha256") == sha(helper)
+            )
+        if sha(current) == ORIGINAL_SHA256 and (not bridge.exists() or result["restore_available"]):
+            result.update(supported=True, mode="verified_patch", state="patch_required", reload_required=True)
+        elif sha(current) == expected and _regular_file(bridge, 65536) == helper:
+            result.update(supported=True, mode="verified_patch", state="patched")
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # An unrecognized, incomplete or modified build remains unsupported.
+    return result
+
+
+def plan(extension, backup):
+    extension, backup = Path(extension).absolute(), Path(backup).absolute()
+    if backup.is_relative_to(extension) or extension.is_relative_to(backup):
+        raise ValueError("Keep the compatibility backup outside the extension directory")
+    result = inspect(extension, backup)
+    if not result["supported"]:
+        raise ValueError("Unsupported Cline build")
+    return {**result, "extension": str(extension), "backup": str(backup),
+            "changes": ["next/dist/extension.js", "next/dist/" + BRIDGE_NAME]}
+
+
+def verify(extension, backup=None):
+    result = inspect(extension, backup)
+    if result["state"] != "patched":
+        raise ValueError("Cline compatibility verification failed")
+    return result
 
 
 def sha(data):
