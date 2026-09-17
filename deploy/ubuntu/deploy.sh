@@ -43,8 +43,9 @@ systemctl enable --now vessel-dashboard.service
 systemctl restart vessel-dashboard.service
 ready=0
 for attempt in {1..40}; do
-  if curl --fail --silent --output /dev/null http://127.0.0.1:8092/setup-guide &&
-      curl --fail --silent --output /dev/null http://127.0.0.1:8092/api/session; then
+  # Account session endpoints intentionally reject direct loopback origins.
+  # The public reverse proxy is validated after this private service check.
+  if curl --fail --silent --output /dev/null http://127.0.0.1:8092/setup-guide; then
     ready=1; break
   fi
   sleep 1
