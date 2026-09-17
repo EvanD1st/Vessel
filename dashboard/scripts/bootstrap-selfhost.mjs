@@ -1,8 +1,17 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt } from 'node:crypto';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { hashPassword } from 'better-auth/crypto';
+import { promisify } from 'node:util';
+
+const scryptAsync = promisify(scrypt);
+async function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const key = await scryptAsync(password.normalize('NFKC'), salt, 64, {
+    N: 16384, r: 16, p: 1, maxmem: 128 * 16384 * 16 * 2,
+  });
+  return `${salt}:${key.toString('hex')}`;
+}
 
 const email = process.argv[2]?.trim().toLowerCase();
 const databasePath = process.env.VESSEL_SQLITE_PATH;
