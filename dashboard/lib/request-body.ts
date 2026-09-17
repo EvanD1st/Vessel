@@ -1,8 +1,27 @@
+/**
+ * The Node target is bound to loopback and reached only through Caddy. Caddy
+ * replaces forwarding headers, allowing the original HTTPS origin to be used
+ * for same-origin checks without trusting arbitrary internet headers.
+ */
+export function requestOrigin(request: Request): string {
+  const direct = new URL(request.url).origin;
+  if (typeof process === 'undefined' || process.env.VESSEL_TARGET !== 'node')
+    return direct;
+  const configured = process.env.VESSEL_AUTH_URL;
+  if (!configured) return direct;
+  const expected = new URL(configured);
+  const proto = request.headers.get('x-forwarded-proto');
+  const host = request.headers.get('x-forwarded-host');
+  return proto === expected.protocol.slice(0, -1) && host === expected.host
+    ? expected.origin
+    : direct;
+}
+
 /** Small same-origin JSON mutations, with streaming body bounds. */
 export async function readBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
-  if (request.headers.get('origin') !== new URL(request.url).origin)
+  if (request.headers.get('origin') !== requestOrigin(request))
     throw new Error('origin');
   if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
     throw new Error('json');

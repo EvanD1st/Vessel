@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { dashboardAuth } from '@/app/auth';
-import { readBody } from '@/lib/request-body';
+import { readBody, requestOrigin } from '@/lib/request-body';
 export const dynamic = 'force-dynamic';
 const json = (data: unknown, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -12,7 +12,7 @@ async function sessionRequest(
   body?: Record<string, unknown>,
 ) {
   const url = new URL('/api/auth/' + operation, env.VESSEL_AUTH_URL);
-  if (new URL(request.url).origin !== url.origin)
+  if (requestOrigin(request) !== url.origin)
     return json({ error: 'Invalid request origin.' }, 403);
   const headers = new Headers(request.headers);
   headers.delete('content-length');
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
   }
 }
 export async function DELETE(request: Request) {
-  if (request.headers.get('origin') !== new URL(request.url).origin)
+  if (request.headers.get('origin') !== requestOrigin(request))
     return json({ error: 'Invalid request origin.' }, 403);
   try {
     return await sessionRequest(request, 'sign-out', {});

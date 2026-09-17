@@ -68,6 +68,8 @@ vessel-cont.duckdns.org {
     encode gzip
     reverse_proxy 127.0.0.1:8092 {
         header_up CF-Connecting-IP {remote_host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host vessel-cont.duckdns.org
     }
 }
 EOF

@@ -21,9 +21,11 @@ const port = await new Promise((resolvePort, reject) => {
   });
 });
 const base = `http://127.0.0.1:${port}`;
+const publicOrigin = 'https://vessel.test.invalid';
+const proxyHeaders = { origin: publicOrigin, 'x-forwarded-proto': 'https', 'x-forwarded-host': 'vessel.test.invalid' };
 const env = { ...process.env, VESSEL_TARGET: 'node', VESSEL_SQLITE_PATH: database,
   VESSEL_OWNER_FILE_DIR: privateDir, VESSEL_AUTH_SECRET: randomBytes(48).toString('base64url'),
-  VESSEL_AUTH_URL: base, HOST: '127.0.0.1', PORT: String(port) };
+  VESSEL_AUTH_URL: publicOrigin, HOST: '127.0.0.1', PORT: String(port) };
 let processHandle;
 async function start() {
   processHandle = spawn(process.execPath, [join(root, 'dist/standalone/server.js')], { cwd: root, env, stdio: 'ignore' });
@@ -52,19 +54,19 @@ try {
   const password = /^Temporary password: (.*)$/m.exec(login)?.[1];
   if (!email || !password) throw new Error('Owner fixture unavailable');
   await start();
-  const rejected = await fetch(base + '/api/auth/sign-up/email', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{}' });
+  const rejected = await fetch(base + '/api/auth/sign-up/email', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: '{}' });
   if (rejected.status !== 404) throw new Error('Public signup was not blocked');
-  const bad = await fetch(base + '/api/session', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'invalid' }) });
+  const bad = await fetch(base + '/api/session', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'invalid' }) });
   if (bad.ok) throw new Error('Invalid credentials were accepted');
-  const success = await fetch(base + '/api/session', { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  const success = await fetch(base + '/api/session', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
   if (!success.ok) throw new Error(`Owner login failed (${success.status})`);
   const cookie = success.headers.get('set-cookie')?.split(';')[0];
   if (!cookie) throw new Error('Session cookie missing');
-  const account = await fetch(base + '/api/session', { headers: { cookie } });
+  const account = await fetch(base + '/api/session', { headers: { ...proxyHeaders, cookie } });
   if ((await account.json()).user?.email !== email) throw new Error('Owner session was not restored');
   await stop();
   await start();
-  const restored = await fetch(base + '/api/session', { headers: { cookie } });
+  const restored = await fetch(base + '/api/session', { headers: { ...proxyHeaders, cookie } });
   if ((await restored.json()).user?.email !== email) throw new Error('Session did not persist across restart');
-  console.log('Self-host smoke passed: migrations, invite-only, login, session restart');
+  console.log('Self-host smoke passed: migrations, invite-only, proxied HTTPS login, session restart');
 } finally { await stop(); await rm(privateDir, { recursive: true, force: true }); }
