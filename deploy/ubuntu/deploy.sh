@@ -9,6 +9,13 @@ archive=/home/ubuntu/vessel-staging/${release}.tar.gz
 root=/opt/vessel-dashboard
 target=$root/releases/$release
 old=$(readlink -f "$root/current" 2>/dev/null || true)
+activate_release() {
+  local destination=$1
+  local candidate=$root/.current-${release}
+  rm -f "$candidate"
+  ln -sT "$destination" "$candidate"
+  mv -Tf "$candidate" "$root/current"
+}
 if [[ ! -d "$target" ]]; then
   mkdir -m 0755 "$target"
   # A release is built from the checked commit and is transferred over pinned SSH.
@@ -31,8 +38,7 @@ if [[ ! -e "$backup" ]]; then
 fi
 # Migrations are append-only, hash checked and transactional. Backups stay private.
 runuser -u vessel-dashboard -- python3 "$target/scripts/migrate-selfhost.py" --database "$database"
-ln -sfn "$target" "$root/current.next"
-mv -Tf "$root/current.next" "$root/current"
+activate_release "$target"
 systemctl enable --now vessel-dashboard.service
 systemctl restart vessel-dashboard.service
 ready=0
@@ -45,7 +51,7 @@ for attempt in {1..40}; do
 done
 if [[ "$ready" != 1 ]]; then
   if [[ -n "$old" && -d "$old" ]]; then
-    ln -sfn "$old" "$root/current.next"; mv -Tf "$root/current.next" "$root/current"; systemctl restart vessel-dashboard.service
+    activate_release "$old"; systemctl restart vessel-dashboard.service
   fi
   echo 'VESSEL failed health checks; previous application release restored. Database backup retained.' >&2
   exit 1
