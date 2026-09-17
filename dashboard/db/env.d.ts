@@ -4,5 +4,6 @@ declare namespace Cloudflare {
     VESSEL_AUTH_SECRET: string;
     VESSEL_AUTH_URL: string;
     RESEND_API_KEY: string;
+    RESEND_FROM?: string;
   }
 }

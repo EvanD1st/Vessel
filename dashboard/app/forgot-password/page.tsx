@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ShieldCheck, Mail, ArrowRight, ArrowLeft, Terminal, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Mail, ArrowRight, ArrowLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { CyberCanvas } from '@/components/cyber-canvas';
 
 export default function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [resetUrl, setResetUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   return (
@@ -25,34 +24,22 @@ export default function ForgotPasswordPage() {
         <div className="hud-corner hud-bl" aria-hidden="true" />
         <div className="hud-corner hud-br" aria-hidden="true" />
 
-        <section className="login-card web3-card" aria-labelledby="forgot-title">
-          {/* Web3 Protocol Status Bar */}
-          <div className="web3-status-bar">
-            <div className="web3-status-pill">
-              <span className="pulse-dot" />
-              <span className="mono-status">CIPHER_RECOVERY // PROTOCOL</span>
-            </div>
-            <div className="web3-network-badge">
-              <Terminal size={11} className="badge-icon" />
-              <span>0xVESSEL_v0.3</span>
-            </div>
-          </div>
+        <div className="cyber-accent-line" aria-hidden="true" />
 
-          {/* Brand Header */}
-          <div className="login-brand web3-brand">
-            <div className="brand-shield-wrapper">
-              <ShieldCheck className="brand-shield-icon" size={26} />
-              <div className="shield-glow" />
+        <section className="login-card web3-card" aria-labelledby="forgot-title">
+          <div className="web3-logo-badge">
+            <div className="web3-logo-inner">
+              <ShieldCheck size={26} className="text-[#8bc6ad]" />
             </div>
-            <div className="brand-meta">
-              <span className="brand-name">VESSEL</span>
-              <span className="brand-tagline">AGENT CONTINUITY PROTOCOL</span>
+            <div className="web3-badge-status">
+              <span className="live-dot pulse" />
+              <span className="live-text">VESSEL RECOVERY NODE</span>
             </div>
           </div>
 
           <div className="web3-header-text">
             <h1 id="forgot-title">RECOVER CIPHER</h1>
-            <p>Enter your registered operator email to generate password recovery authorization.</p>
+            <p>Enter your operator email address. A secure recovery authorization link will be dispatched to your inbox.</p>
           </div>
 
           {submitted ? (
@@ -60,24 +47,16 @@ export default function ForgotPasswordPage() {
               <output className="web3-success-banner">
                 <CheckCircle2 size={18} className="success-icon" />
                 <div>
-                  <strong>Recovery Authorization Generated</strong>
-                  <p>A secure reset token has been initialized for your account.</p>
+                  <strong>Recovery Link Dispatched</strong>
+                  <p>If an account is associated with this email, a secure authorization link has been sent to your inbox. Please check your email to complete password recovery.</p>
                 </div>
               </output>
 
-              {resetUrl ? (
-                <Link href={resetUrl} className="primary-action web3-submit-btn text-center block mt-4">
-                  <span className="btn-state">
-                    CONTINUE TO RESET PASSWORD <ArrowRight size={15} className="btn-arrow" />
-                  </span>
-                </Link>
-              ) : (
-                <Link href="/" className="primary-action web3-submit-btn text-center block mt-4">
-                  <span className="btn-state">
-                    <ArrowLeft size={15} /> Return to Sign In
-                  </span>
-                </Link>
-              )}
+              <Link href="/" className="primary-action web3-submit-btn text-center block mt-4">
+                <span className="btn-state">
+                  <ArrowLeft size={15} /> Return to Sign In
+                </span>
+              </Link>
             </div>
           ) : (
             <form
@@ -95,12 +74,9 @@ export default function ForgotPasswordPage() {
                       email: fields.get('email'),
                     }),
                   });
-                  const result = (await response.json()) as { error?: string; resetUrl?: string };
+                  const result = (await response.json()) as { error?: string };
                   if (!response.ok) {
                     throw new Error(result.error || 'Could not process password reset request.');
-                  }
-                  if (result.resetUrl) {
-                    setResetUrl(result.resetUrl);
                   }
                   setSubmitted(true);
                 } catch (failure) {
@@ -109,6 +85,7 @@ export default function ForgotPasswordPage() {
                       ? failure.message
                       : 'Could not process password reset request.',
                   );
+                } finally {
                   setBusy(false);
                 }
               }}

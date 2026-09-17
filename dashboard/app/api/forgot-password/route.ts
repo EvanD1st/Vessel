@@ -56,35 +56,62 @@ export async function POST(request: Request) {
       ).bind(id, `reset-password:${token}`, user.id, expiresAt, now, now),
     ]);
 
-    const resetUrl = `${env.VESSEL_AUTH_URL || ''}/reset-password?token=${token}`;
+    const authUrl =
+      (typeof process !== 'undefined' ? process.env.VESSEL_AUTH_URL : undefined) ||
+      env.VESSEL_AUTH_URL ||
+      '';
+    const resetUrl = `${authUrl}/reset-password?token=${token}`;
 
-    if (env.RESEND_API_KEY) {
+    const resendApiKey =
+      (typeof process !== 'undefined' ? process.env.RESEND_API_KEY : undefined) ||
+      env.RESEND_API_KEY;
+    const resendFrom =
+      (typeof process !== 'undefined' ? process.env.RESEND_FROM : undefined) ||
+      env.RESEND_FROM ||
+      'VESSEL <onboarding@resend.dev>';
+
+    if (resendApiKey) {
       try {
-        await fetch('https://api.resend.com/emails', {
+        const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${env.RESEND_API_KEY}`,
+            Authorization: `Bearer ${resendApiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'VESSEL <noreply@vessel-dashboard.cloud-ip.cc>',
+            from: resendFrom,
             to: user.email,
-            subject: 'Reset your VESSEL password',
-            html: `<p>Click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+            subject: 'Reset your VESSEL master password',
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background-color: #0c1015; color: #e2e8f0; padding: 32px; border-radius: 8px; max-width: 540px; margin: 0 auto; border: 1px solid #1e293b;">
+                <h2 style="color: #8bc6ad; margin-top: 0; letter-spacing: 1px;">VESSEL SECURITY // CIPHER RECOVERY</h2>
+                <p style="color: #94a3b8; font-size: 14px; line-height: 1.6;">A master password reset was requested for operator account <strong>${user.email}</strong>.</p>
+                <div style="margin: 28px 0; text-align: center;">
+                  <a href="${resetUrl}" style="background-color: #8bc6ad; color: #0b1015; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; display: inline-block; letter-spacing: 0.5px;">
+                    RESET PASSWORD AUTHORIZATION &rarr;
+                  </a>
+                </div>
+                <p style="color: #64748b; font-size: 12px; line-height: 1.5;">If you did not initiate this request, you can safely ignore this transmission. Your current password remains secure. This authorization link expires in 1 hour.</p>
+                <hr style="border: 0; border-top: 1px solid #1e293b; margin: 24px 0;" />
+                <p style="color: #475569; font-size: 11px; word-break: break-all;">Fallback URL: ${resetUrl}</p>
+              </div>
+            `,
           }),
         });
+        if (!emailRes.ok) {
+          const errData = await emailRes.text();
+          console.error('[VESSEL AUTH] Resend API error:', errData);
+        } else {
+          console.log(`[VESSEL AUTH] Password reset email dispatched to ${user.email}`);
+        }
       } catch (err) {
         console.error('[VESSEL AUTH] Failed to send email via Resend:', err);
       }
     }
 
-    console.log(`[VESSEL AUTH] Password reset token created for ${user.email}: ${resetUrl}`);
-
     return json({
       success: true,
-      resetToken: token,
-      resetUrl: `/reset-password?token=${token}`,
-      message: 'Reset authorization link generated.',
+      message: 'If an account exists with this email, a reset authorization link has been dispatched to your inbox.',
     });
   } catch (err) {
     console.error('Password reset request failed:', err);
