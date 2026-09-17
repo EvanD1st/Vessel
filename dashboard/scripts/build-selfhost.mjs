@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, cp, mkdir } from 'node:fs/promises';
 
 const result = spawnSync(process.execPath, [resolve('node_modules/vinext/dist/cli.js'), 'build'], {
   stdio: 'inherit', env: { ...process.env, VESSEL_TARGET: 'node' }, timeout: 240000,
@@ -12,3 +12,4 @@ await mkdir(releaseScripts, { recursive: true });
 for (const name of ['migrate-selfhost.py', 'bootstrap-selfhost.mjs']) {
   await copyFile(resolve('scripts', name), resolve(releaseScripts, name));
 }
+await cp(resolve('drizzle'), resolve('dist/standalone/drizzle'), { recursive: true });
