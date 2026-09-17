@@ -8,6 +8,7 @@ import { CyberCanvas } from '@/components/cyber-canvas';
 export default function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [resetUrl, setResetUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   return (
@@ -51,7 +52,7 @@ export default function ForgotPasswordPage() {
 
           <div className="web3-header-text">
             <h1 id="forgot-title">RECOVER CIPHER</h1>
-            <p>Enter your operator email address. If an account is registered, a password reset link will be dispatched.</p>
+            <p>Enter your registered operator email to generate password recovery authorization.</p>
           </div>
 
           {submitted ? (
@@ -59,15 +60,24 @@ export default function ForgotPasswordPage() {
               <output className="web3-success-banner">
                 <CheckCircle2 size={18} className="success-icon" />
                 <div>
-                  <strong>Reset Link Dispatched</strong>
-                  <p>If an account exists with this email, instructions to reset your master cipher have been generated.</p>
+                  <strong>Recovery Authorization Generated</strong>
+                  <p>A secure reset token has been initialized for your account.</p>
                 </div>
               </output>
-              <Link href="/" className="primary-action web3-submit-btn text-center block mt-4">
-                <span className="btn-state">
-                  <ArrowLeft size={15} /> Return to Sign In
-                </span>
-              </Link>
+
+              {resetUrl ? (
+                <Link href={resetUrl} className="primary-action web3-submit-btn text-center block mt-4">
+                  <span className="btn-state">
+                    CONTINUE TO RESET PASSWORD <ArrowRight size={15} className="btn-arrow" />
+                  </span>
+                </Link>
+              ) : (
+                <Link href="/" className="primary-action web3-submit-btn text-center block mt-4">
+                  <span className="btn-state">
+                    <ArrowLeft size={15} /> Return to Sign In
+                  </span>
+                </Link>
+              )}
             </div>
           ) : (
             <form
@@ -85,9 +95,12 @@ export default function ForgotPasswordPage() {
                       email: fields.get('email'),
                     }),
                   });
-                  const result = (await response.json()) as { error?: string };
+                  const result = (await response.json()) as { error?: string; resetUrl?: string };
                   if (!response.ok) {
                     throw new Error(result.error || 'Could not process password reset request.');
+                  }
+                  if (result.resetUrl) {
+                    setResetUrl(result.resetUrl);
                   }
                   setSubmitted(true);
                 } catch (failure) {
@@ -129,11 +142,11 @@ export default function ForgotPasswordPage() {
               <button className="primary-action web3-submit-btn" type="submit" disabled={busy}>
                 {busy ? (
                   <span className="btn-state loading">
-                    <span className="cyber-spinner" /> DISPATCHING CIPHER LINK...
+                    <span className="cyber-spinner" /> GENERATING RESET AUTHORIZATION...
                   </span>
                 ) : (
                   <span className="btn-state">
-                    REQUEST RESET LINK <ArrowRight size={15} className="btn-arrow" />
+                    INITIALIZE PASSWORD RESET <ArrowRight size={15} className="btn-arrow" />
                   </span>
                 )}
               </button>

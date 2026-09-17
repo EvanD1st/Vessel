@@ -1,6 +1,6 @@
-import { env } from 'cloudflare:workers';
-import { dashboardAuth } from '@/app/auth';
-import { readBody, requestOrigin } from '@/lib/request-body';
+import { hashPassword } from 'better-auth/crypto';
+import { connectionDb } from '@/db';
+import { readBody } from '@/lib/request-body';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,10 +8,6 @@ const json = (data: unknown, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 
 export async function POST(request: Request) {
-  const url = new URL('/api/auth/reset-password', env.VESSEL_AUTH_URL);
-  if (requestOrigin(request) !== url.origin)
-    return json({ error: 'Invalid request origin.' }, 403);
-
   let body: Record<string, unknown>;
   try {
     body = await readBody(request);
@@ -32,47 +28,49 @@ export async function POST(request: Request) {
     );
   }
 
+  const token = (body.token as string).trim();
+  const password = body.password as string;
+
   try {
-    const headers = new Headers(request.headers);
-    headers.delete('content-length');
-    headers.set('content-type', 'application/json');
-    if (url.protocol === 'http:') headers.set('cf-connecting-ip', '127.0.0.1');
-    if (!headers.get('cf-connecting-ip')) headers.set('cf-connecting-ip', '0.0.0.0');
+    const db = connectionDb();
+    const record = await db
+      .prepare('SELECT id, value, expires_at FROM verification WHERE identifier = ?')
+      .bind(`reset-password:${token}`)
+      .first<{ id: string; value: string; expires_at: number }>();
 
-    const response = await dashboardAuth().handler(
-      new Request(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          token: (body.token as string).trim(),
-          newPassword: body.password,
-        }),
-      }),
-    );
-
-    const out = new Headers(response.headers);
-    out.set('Cache-Control', 'no-store');
-    out.delete('content-length');
-
-    if (!response.ok) {
-      const err = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
-      return Response.json(
+    if (!record || Number(record.expires_at) < Date.now()) {
+      return json(
         {
           error:
-            err.message ||
-            err.error ||
             'The password reset token is invalid or has expired. Please request a new one.',
         },
-        { status: response.status, headers: out },
+        400,
       );
     }
 
-    return Response.json(
-      { success: true, message: 'Password has been updated successfully.' },
-      { status: 200, headers: out },
-    );
-  } catch {
-    console.error('Password reset execution failed');
+    const userId = record.value;
+    const hash = await hashPassword(password);
+    const now = Date.now();
+
+    await db.batch([
+      db
+        .prepare(
+          "UPDATE account SET password = ?, updated_at = ? WHERE user_id = ? AND provider_id = 'credential'",
+        )
+        .bind(hash, now, userId),
+      db
+        .prepare('UPDATE user SET must_change_password = 0, updated_at = ? WHERE id = ?')
+        .bind(now, userId),
+      db.prepare('DELETE FROM verification WHERE id = ?').bind(record.id),
+      db.prepare('DELETE FROM session WHERE user_id = ?').bind(userId),
+    ]);
+
+    return json({
+      success: true,
+      message: 'Master password has been updated successfully.',
+    });
+  } catch (err) {
+    console.error('Password reset execution failed:', err);
     return json({ error: 'Could not reset password. Try again shortly.' }, 503);
   }
 }
