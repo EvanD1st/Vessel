@@ -65,6 +65,8 @@ export async function POST(request: Request) {
       db.prepare('DELETE FROM session WHERE user_id = ?').bind(userId),
     ]);
 
+    console.log(`[VESSEL AUTH] Password reset successfully executed for user ${userId}`);
+
     return json({
       success: true,
       message: 'Master password has been updated successfully.',

@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
           </div>
 
           <div className="web3-header-text">
-            <h1 id="forgot-title">RECOVER CIPHER</h1>
+            <h1 id="forgot-title">RECOVER PASSWORD</h1>
             <p>Enter your operator email address. A secure recovery authorization link will be dispatched to your inbox.</p>
           </div>
 
@@ -139,9 +139,9 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="web3-security-strip">
-              <span className="strip-item">CUSTODY: LOCAL_MACHINE</span>
+              <span className="strip-item">VESSEL PROTOCOL</span>
               <span className="strip-dot">•</span>
-              <span className="strip-item">CIPHER: AES_256_GCM</span>
+              <span className="strip-item">END-TO-END ENCRYPTED</span>
             </div>
           </div>
         </section>

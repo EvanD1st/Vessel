@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { ShieldCheck, Lock, KeyRound, ArrowRight, ArrowLeft, Terminal, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowRight, ArrowLeft, Terminal, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { CyberCanvas } from '@/components/cyber-canvas';
 
 function ResetPasswordForm() {
@@ -31,11 +31,11 @@ function ResetPasswordForm() {
         <div className="web3-status-bar">
           <div className="web3-status-pill">
             <span className="pulse-dot" />
-            <span className="mono-status">RESET_CIPHER // PROTOCOL</span>
+            <span className="mono-status">PASSWORD_RECOVERY // SECURE</span>
           </div>
           <div className="web3-network-badge">
             <Terminal size={11} className="badge-icon" />
-            <span>0xVESSEL_v0.3</span>
+            <span>SECURE_NODE</span>
           </div>
         </div>
 
@@ -52,7 +52,7 @@ function ResetPasswordForm() {
         </div>
 
         <div className="web3-header-text">
-          <h1 id="reset-title">UPDATE MASTER CIPHER</h1>
+          <h1 id="reset-title">RESET PASSWORD</h1>
           <p>Establish a new master authentication password for your workspace identity.</p>
         </div>
 
@@ -61,13 +61,25 @@ function ResetPasswordForm() {
             <output className="web3-success-banner">
               <CheckCircle2 size={18} className="success-icon" />
               <div>
-                <strong>Cipher Updated Successfully</strong>
-                <p>Your master password has been refreshed. You can now authenticate with your new credentials.</p>
+                <strong>Password reset successful</strong>
+                <p>Your password has been reset successfully. Please proceed to login with your new credentials.</p>
               </div>
             </output>
             <Link href="/" className="primary-action web3-submit-btn text-center block mt-4">
               <span className="btn-state">
-                <ArrowLeft size={15} /> Authenticate Now
+                PROCEED TO LOGIN <ArrowRight size={15} className="btn-arrow" />
+              </span>
+            </Link>
+          </div>
+        ) : !urlToken ? (
+          <div className="web3-recovery-missing">
+            <div className="web3-error-banner mb-4" role="alert">
+              <AlertCircle size={15} />
+              <span>No recovery authorization link detected. Please open the link sent to your email.</span>
+            </div>
+            <Link href="/forgot-password" className="primary-action web3-submit-btn text-center block mt-4">
+              <span className="btn-state">
+                REQUEST PASSWORD RESET <ArrowRight size={15} className="btn-arrow" />
               </span>
             </Link>
           </div>
@@ -117,24 +129,6 @@ function ResetPasswordForm() {
               }
             }}
           >
-            {!urlToken && (
-              <div className="form-field web3-field">
-                <label htmlFor="reset-token" className="web3-label">
-                  <span className="label-tag">[TOKEN]</span> Reset Authorization Token
-                </label>
-                <div className="web3-input-wrapper">
-                  <KeyRound className="field-icon" size={16} />
-                  <input
-                    id="reset-token"
-                    name="token"
-                    type="text"
-                    required
-                    placeholder="Enter token from email link"
-                    className="web3-input"
-                  />
-                </div>
-              </div>
-            )}
 
             <div className="form-field web3-field">
               <label htmlFor="reset-password" className="web3-label">
@@ -204,11 +198,11 @@ function ResetPasswordForm() {
             <button className="primary-action web3-submit-btn" type="submit" disabled={busy}>
               {busy ? (
                 <span className="btn-state loading">
-                  <span className="cyber-spinner" /> UPDATING CIPHER...
+                  <span className="cyber-spinner" /> UPDATING PASSWORD...
                 </span>
               ) : (
                 <span className="btn-state">
-                  SAVE NEW CIPHER <ArrowRight size={15} className="btn-arrow" />
+                  SAVE NEW PASSWORD <ArrowRight size={15} className="btn-arrow" />
                 </span>
               )}
             </button>
@@ -224,9 +218,9 @@ function ResetPasswordForm() {
           </div>
 
           <div className="web3-security-strip">
-            <span className="strip-item">CUSTODY: LOCAL_MACHINE</span>
+            <span className="strip-item">VESSEL PROTOCOL</span>
             <span className="strip-dot">•</span>
-            <span className="strip-item">CIPHER: AES_256_GCM</span>
+            <span className="strip-item">END-TO-END ENCRYPTED</span>
           </div>
         </div>
       </section>

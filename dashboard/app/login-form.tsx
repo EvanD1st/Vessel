@@ -33,7 +33,7 @@ export default function LoginForm() {
             </div>
             <div className="web3-network-badge">
               <Terminal size={11} className="badge-icon" />
-              <span>0xVESSEL_v0.3</span>
+              <span>SECURE_NODE</span>
             </div>
           </div>
 
@@ -106,10 +106,10 @@ export default function LoginForm() {
             <div className="form-field web3-field">
               <div className="label-split">
                 <label htmlFor="login-password" className="web3-label">
-                  <span className="label-tag">[PASS_CIPHER]</span> Password
+                  <span className="label-tag">[AUTHENTICATION]</span> Password
                 </label>
                 <Link href="/forgot-password" className="web3-forgot-link">
-                  Forgot key?
+                  Forgot password?
                 </Link>
               </div>
               <div className="web3-input-wrapper">
@@ -168,9 +168,9 @@ export default function LoginForm() {
             </div>
 
             <div className="web3-security-strip">
-              <span className="strip-item">CUSTODY: LOCAL_MACHINE</span>
+              <span className="strip-item">VESSEL PROTOCOL</span>
               <span className="strip-dot">•</span>
-              <span className="strip-item">CIPHER: AES_256_GCM</span>
+              <span className="strip-item">END-TO-END ENCRYPTED</span>
             </div>
           </div>
         </section>

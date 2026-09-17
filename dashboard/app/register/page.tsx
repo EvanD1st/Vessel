@@ -33,7 +33,7 @@ export default function RegisterPage() {
             </div>
             <div className="web3-network-badge">
               <Terminal size={11} className="badge-icon" />
-              <span>0xVESSEL_v0.3</span>
+              <span>SECURE_NODE</span>
             </div>
           </div>
 
@@ -127,7 +127,7 @@ export default function RegisterPage() {
 
             <div className="form-field web3-field">
               <label htmlFor="register-password" className="web3-label">
-                <span className="label-tag">[PASS_CIPHER]</span> Master Password
+                <span className="label-tag">[SECURITY]</span> Master Password
               </label>
               <div className="web3-input-wrapper">
                 <Lock className="field-icon" size={16} />
@@ -186,9 +186,9 @@ export default function RegisterPage() {
             </div>
 
             <div className="web3-security-strip">
-              <span className="strip-item">CUSTODY: LOCAL_MACHINE</span>
+              <span className="strip-item">VESSEL PROTOCOL</span>
               <span className="strip-dot">•</span>
-              <span className="strip-item">CIPHER: AES_256_GCM</span>
+              <span className="strip-item">END-TO-END ENCRYPTED</span>
             </div>
           </div>
         </section>
