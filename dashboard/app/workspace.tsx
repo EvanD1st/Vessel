@@ -18,6 +18,8 @@ import {
   Unplug,
   Wallet,
   TriangleAlert,
+  Settings,
+  LogOut,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -1539,27 +1541,32 @@ export default function Workspace({
                 ? 'Account authenticated'
                 : 'Sign-in required for saved connections'}
             </span>
-            <Link href="/account">Account settings</Link>
-            {signedIn && (
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    const response = await fetch('/api/session', {
-                      method: 'DELETE',
-                    });
-                    if (!response.ok) throw new Error('Could not sign out.');
-                    disconnect();
-                    notifyAccountChange();
-                    window.location.assign('/');
-                  } catch {
-                    setMessage('Could not sign out. Please try again.');
-                  }
-                }}
-              >
-                Sign out
-              </Button>
-            )}
+            <div className="footer-actions">
+              <Link href="/account" className="account-settings-btn">
+                <Settings size={14} /> Account settings
+              </Link>
+              {signedIn && (
+                <Button
+                  variant="outline"
+                  className="sign-out-btn"
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/session', {
+                        method: 'DELETE',
+                      });
+                      if (!response.ok) throw new Error('Could not sign out.');
+                      disconnect();
+                      notifyAccountChange();
+                      window.location.assign('/');
+                    } catch {
+                      setMessage('Could not sign out. Please try again.');
+                    }
+                  }}
+                >
+                  <LogOut size={14} /> Sign out
+                </Button>
+              )}
+            </div>
           </footer>
         </div>
       </main>

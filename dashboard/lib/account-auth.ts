@@ -39,19 +39,26 @@ export function createAccountAuth(
       maxPasswordLength: 128,
       requireEmailVerification: false,
       async sendResetPassword({ user, url }) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: 'VESSEL <noreply@vessel-dashboard.cloud-ip.cc>',
-            to: user.email,
-            subject: 'Reset your VESSEL password',
-            html: `<p>Click the link below to reset your password:</p><p><a href="${url}">${url}</a></p>`
-          })
-        });
+        if (env.RESEND_API_KEY) {
+          try {
+            await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                from: 'VESSEL <noreply@vessel-dashboard.cloud-ip.cc>',
+                to: user.email,
+                subject: 'Reset your VESSEL password',
+                html: `<p>Click the link below to reset your password:</p><p><a href="${url}">${url}</a></p>`
+              })
+            });
+          } catch (err) {
+            console.error('[VESSEL AUTH] Failed to send reset email via Resend:', err);
+          }
+        }
+        console.log(`[VESSEL AUTH] Password reset link for ${user.email}: ${url}`);
       },
     },
     emailVerification: {

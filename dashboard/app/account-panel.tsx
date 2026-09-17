@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ArrowLeft, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { notifyAccountChange, type AccountUser } from './account-boundary';
@@ -90,9 +91,14 @@ export default function AccountPanel({ user }: { user: AccountUser }) {
           <p>{user.email}</p>
         </div>
         <div className="account-actions">
-          {!user.mustChangePassword && <Link href="/">Back to workspace</Link>}
+          {!user.mustChangePassword && (
+            <Link href="/" className="account-settings-btn">
+              <ArrowLeft size={14} /> Back to workspace
+            </Link>
+          )}
           <Button
             variant="outline"
+            className="sign-out-btn"
             onClick={async () => {
               setError('');
               try {
@@ -105,7 +111,7 @@ export default function AccountPanel({ user }: { user: AccountUser }) {
               }
             }}
           >
-            Sign out
+            <LogOut size={14} /> Sign out
           </Button>
         </div>
       </header>

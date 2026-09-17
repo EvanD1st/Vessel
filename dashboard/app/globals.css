@@ -1660,3 +1660,104 @@ summary {
     font-size: 12px !important;
   }
 }
+
+/* ==========================================================================
+   Styled Actions: Account Settings & Sign Out Buttons
+   ========================================================================== */
+
+.footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-settings-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: rgba(20, 33, 44, 0.75) !important;
+  border: 1px solid rgba(139, 198, 173, 0.35) !important;
+  color: #8bc6ad !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  line-height: 1.4 !important;
+}
+
+.account-settings-btn:hover {
+  background: rgba(35, 87, 73, 0.35) !important;
+  border-color: #d7fa7d !important;
+  color: #d7fa7d !important;
+  box-shadow: 0 0 14px rgba(215, 250, 125, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+.sign-out-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: rgba(45, 22, 28, 0.6) !important;
+  border: 1px solid rgba(235, 87, 87, 0.4) !important;
+  color: #ff9b9b !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+}
+
+.sign-out-btn:hover {
+  background: rgba(235, 87, 87, 0.25) !important;
+  border-color: #ff5e5e !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 16px rgba(235, 87, 87, 0.35) !important;
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Web3 Success & Recovery Banners
+   ========================================================================== */
+
+.web3-recovery-success {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.web3-success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(35, 87, 73, 0.3) !important;
+  border: 1px solid rgba(139, 198, 173, 0.4) !important;
+  color: #dcf5b6 !important;
+  padding: 14px 16px !important;
+  border-radius: 8px !important;
+  font-size: 13.5px !important;
+  line-height: 1.5 !important;
+}
+
+.web3-success-banner strong {
+  display: block;
+  font-size: 14px !important;
+  color: #d7fa7d !important;
+  margin-bottom: 3px;
+}
+
+.web3-success-banner p {
+  color: #a9c7b5 !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+}
+
+.web3-success-banner .success-icon {
+  color: #d7fa7d !important;
+  flex: 0 0 18px;
+  margin-top: 2px;
+}
