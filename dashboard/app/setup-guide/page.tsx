@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { ShieldCheck, Terminal, ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { CyberCanvas } from '@/components/cyber-canvas';
 
 const STEPS = [
@@ -82,10 +81,16 @@ export default function SetupGuide() {
           <p className="setup-guide-notice">The complete guide is shown above. Configuration executes locally within your IDE environment.</p>
 
           <div className="setup-guide-footer web3-guide-footer">
-            <Button disabled aria-describedby="marketplace-note" className="web3-vscode-btn">
-              Open in VS Code — preview only
-            </Button>
-            <p id="marketplace-note">A Marketplace listing is not available. Use the locally packaged VSIX.</p>
+            <a
+              href="/downloads/vessel.vsix"
+              download="vessel-0.2.0.vsix"
+              className="primary-action web3-submit-btn text-center block mb-3 text-decoration-none"
+            >
+              <span className="btn-state">
+                DOWNLOAD VESSEL VSIX (v0.2.0) ↓
+              </span>
+            </a>
+            <p id="marketplace-note">Download the .vsix package and install in VS Code via <code>Extensions &gt; ... &gt; Install from VSIX...</code></p>
             <Link href="/" className="web3-back-link">
               <ArrowLeft size={14} /> Back to sign in
             </Link>
