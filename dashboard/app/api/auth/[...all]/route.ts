@@ -2,7 +2,7 @@ import { dashboardAuth } from '@/app/auth';
 
 export function handleAuth(req: Request) {
   const operation = new URL(req.url).pathname.split('/api/auth/')[1];
-  if (!['sign-in/email', 'get-session', 'sign-out', 'change-password'].includes(operation)) {
+  if (!['sign-in/email', 'sign-up/email', 'get-session', 'sign-out', 'change-password'].includes(operation)) {
     return Response.json({ error: 'This dashboard is invite-only.' }, { status: 404 });
   }
   const headers = new Headers(req.headers);

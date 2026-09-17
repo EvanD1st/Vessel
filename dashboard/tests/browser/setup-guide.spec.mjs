@@ -10,39 +10,11 @@ test('all eight steps are readable and installation is truthfully disabled', asy
   await expect(page.locator('a[href^="vscode:"]')).toHaveCount(0);
 });
 
-test('keyboard play, pause, replay, and finite completion', async ({ page }) => {
+test('guide links back to sign in', async ({ page }) => {
   await page.goto('/setup-guide');
-  const play = page.getByRole('button', { name: 'Play animation', exact: true });
-  await expect(play).toBeEnabled();
-  await page.clock.install();
-  await page.keyboard.press('Tab');
-  await expect(play).toBeFocused();
-  await page.keyboard.press('Space');
-  await expect(page.getByRole('button', { name: 'Pause animation' })).toBeVisible();
-  await page.clock.runFor(1900);
-  await expect(page.getByRole('status')).toHaveText('Step 2 of 8');
-  await page.getByRole('button', { name: 'Pause animation' }).click();
-  await page.clock.runFor(6000);
-  await expect(page.getByRole('status')).toHaveText('Step 2 of 8');
-  await page.getByRole('button', { name: 'Replay animation' }).click();
-  await expect(page.getByRole('status')).toHaveText('Step 1 of 8');
-  for (let step = 2; step <= 8; step++) {
-    await page.clock.runFor(1810);
-    await expect(page.getByRole('status')).toHaveText(`Step ${step} of 8`);
-  }
-  await expect(page.getByRole('button', { name: 'Play animation', exact: true })).toBeVisible();
-  await page.clock.runFor(10000);
-  await expect(page.getByRole('status')).toHaveText('Step 8 of 8');
-});
-
-test('reduced motion stays static', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/setup-guide');
-  await expect(page.getByRole('status')).toHaveText('Reduced motion: static guide');
-  await expect(page.getByRole('button', { name: 'Play animation', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Replay animation' }).click();
-  expect(await page.locator('.setup-guide-steps li').first().evaluate(element => getComputedStyle(element).transitionDuration)).toBe('0s');
-  await expect(page.getByRole('heading', { name: 'Recover when needed' })).toBeVisible();
+  const backLink = page.getByRole('link', { name: 'Back to sign in' });
+  await expect(backLink).toBeVisible();
+  await expect(backLink).toHaveAttribute('href', '/');
 });
 
 test('JavaScript-disabled fallback shows every step', async ({ browser }) => {

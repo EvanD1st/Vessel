@@ -35,7 +35,7 @@ export function createAccountAuth(
     trustedOrigins: [baseURL],
     emailAndPassword: {
       enabled: true,
-      minPasswordLength: 12,
+      minPasswordLength: 8,
       maxPasswordLength: 128,
       requireEmailVerification: false,
       async sendResetPassword({ user, url }) {
@@ -81,7 +81,7 @@ export function createAccountAuth(
       additionalFields: {
         mustChangePassword: {
           type: 'boolean',
-          defaultValue: true,
+          defaultValue: false,
           input: false,
         },
       },

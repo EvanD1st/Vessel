@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ShieldCheck, Lock, Mail, ArrowRight, Fingerprint, Terminal, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, Fingerprint, Terminal, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { CyberCanvas } from '@/components/cyber-canvas';
 
 export default function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <main className="login-page web3-login-page">
@@ -116,13 +117,22 @@ export default function LoginForm() {
                 <input
                   id="login-password"
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   required
                   maxLength={128}
                   placeholder="••••••••••••••••"
-                  className="web3-input"
+                  className="web3-input web3-input-has-action"
                 />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={0}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 

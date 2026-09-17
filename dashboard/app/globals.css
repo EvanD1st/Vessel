@@ -1470,3 +1470,193 @@ summary {
     display: none;
   }
 }
+
+/* ==========================================================================
+   Password Toggle & Enhanced Web3 Controls
+   ========================================================================== */
+
+.web3-input-has-action {
+  padding-right: 42px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #8bc6ad;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  z-index: 2;
+}
+
+.password-toggle-btn:hover {
+  color: #d7fa7d;
+  background: rgba(215, 250, 125, 0.1);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid #8bc6ad;
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
+   Web3 Setup Guide Styling
+   ========================================================================== */
+
+.web3-setup-container {
+  position: relative;
+  width: min(100%, 760px);
+  z-index: 2;
+}
+
+.web3-setup-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 36px 32px !important;
+}
+
+.setup-guide-kicker {
+  color: #8bc6ad !important;
+  font-family: var(--font-geist-mono, monospace) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.14em !important;
+  margin-bottom: 8px !important;
+  font-weight: 600;
+}
+
+.setup-guide-subtext {
+  color: #9bb0c1 !important;
+  font-size: 13.5px !important;
+  line-height: 1.6 !important;
+  margin-top: 6px !important;
+  margin-bottom: 22px !important;
+}
+
+.web3-steps-list {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.web3-step-item {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 16px !important;
+  padding: 16px 18px !important;
+  background: rgba(15, 25, 34, 0.65) !important;
+  border: 1px solid rgba(64, 124, 105, 0.3) !important;
+  border-radius: 10px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.web3-step-item:hover {
+  background: rgba(20, 33, 44, 0.9) !important;
+  border-color: rgba(139, 198, 173, 0.5) !important;
+  transform: translateX(3px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.web3-step-number {
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 32px !important;
+  border: 1px solid rgba(215, 250, 125, 0.4) !important;
+  background: rgba(35, 87, 73, 0.3) !important;
+  color: #d7fa7d !important;
+  border-radius: 8px !important;
+  font-family: var(--font-geist-mono, monospace) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  box-shadow: 0 0 10px rgba(215, 250, 125, 0.1);
+}
+
+.web3-step-content h2 {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #f4f6f8 !important;
+  margin-bottom: 4px !important;
+  letter-spacing: 0.02em !important;
+}
+
+.web3-step-content p {
+  font-size: 13.5px !important;
+  color: #9bb0c1 !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+}
+
+.setup-guide-notice {
+  font-size: 12px;
+  font-family: var(--font-geist-mono, monospace);
+  color: #607587;
+  margin: 20px 0 0 !important;
+  text-align: center;
+}
+
+.web3-guide-footer {
+  border-top: 1px solid rgba(139, 198, 173, 0.15) !important;
+  margin-top: 24px !important;
+  padding-top: 20px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.web3-vscode-btn {
+  background: rgba(35, 87, 73, 0.35) !important;
+  color: #8bc6ad !important;
+  border: 1px solid rgba(139, 198, 173, 0.3) !important;
+  border-radius: 8px !important;
+  padding: 10px 18px !important;
+  font-size: 13px !important;
+  font-family: var(--font-geist-mono, monospace) !important;
+  opacity: 0.7;
+}
+
+.web3-back-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #8bc6ad !important;
+  text-decoration: none !important;
+  font-size: 13px !important;
+  margin-top: 8px !important;
+  transition: color 0.15s ease !important;
+}
+
+.web3-back-link:hover {
+  color: #d7fa7d !important;
+  text-decoration: underline !important;
+}
+
+@media (max-width: 600px) {
+  .web3-setup-card {
+    padding: 24px 18px !important;
+  }
+  .web3-step-item {
+    padding: 14px 12px !important;
+    gap: 12px !important;
+  }
+  .web3-step-number {
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px !important;
+    font-size: 12px !important;
+  }
+}

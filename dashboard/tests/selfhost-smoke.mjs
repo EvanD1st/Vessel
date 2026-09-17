@@ -54,8 +54,10 @@ try {
   const password = /^Temporary password: (.*)$/m.exec(login)?.[1];
   if (!email || !password) throw new Error('Owner fixture unavailable');
   await start();
-  const rejected = await fetch(base + '/api/auth/sign-up/email', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: '{}' });
-  if (rejected.status !== 404) throw new Error('Public signup was not blocked');
+  const invalidSignup = await fetch(base + '/api/register', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: '{}' });
+  if (invalidSignup.status !== 400) throw new Error('Invalid signup was not rejected');
+  const validSignup = await fetch(base + '/api/register', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Smoke User', email: 'smoke@example.invalid', password: 'ValidPassword123!' }) });
+  if (!validSignup.ok) throw new Error('Valid self-registration failed');
   const bad = await fetch(base + '/api/session', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'invalid' }) });
   if (bad.ok) throw new Error('Invalid credentials were accepted');
   const success = await fetch(base + '/api/session', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
@@ -68,5 +70,5 @@ try {
   await start();
   const restored = await fetch(base + '/api/session', { headers: { ...proxyHeaders, cookie } });
   if ((await restored.json()).user?.email !== email) throw new Error('Session did not persist across restart');
-  console.log('Self-host smoke passed: migrations, invite-only, proxied HTTPS login, session restart');
+  console.log('Self-host smoke passed: migrations, self-registration, proxied HTTPS login, session restart');
 } finally { await stop(); await rm(privateDir, { recursive: true, force: true }); }
