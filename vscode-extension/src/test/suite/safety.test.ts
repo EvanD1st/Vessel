@@ -94,12 +94,14 @@ suite('Safety boundaries', () => {
             const cli = { request: async () => { throw new Error('provider failed'); } } as unknown as PythonCli;
             await assert.rejects(app.collectKey(state, cli));
             assert.equal(secrets.length, 0); assert.equal(saved.length, 0); assert.equal(state.credentialVersion, undefined);
-            const valid = { request: async () => ({ verified_at: 1 }) } as unknown as PythonCli;
+            const requests: Array<{ method: string; params: any }> = [];
+            const valid = { request: async (method: string, params: any) => { requests.push({ method, params }); return { verified_at: 1 }; } } as unknown as PythonCli;
             assert.equal(await app.collectKey(state, valid), true);
-            assert.deepEqual(secrets, ['test-only-private-key']);
+            assert.ok(requests.some(r => r.method === 'orbio-migrate-key' && r.params.key === 'test-only-private-key'));
             assert.ok(!JSON.stringify(saved).includes('test-only-private-key'));
+            assert.equal(state.credentialVersion !== undefined, true);
             Object.assign(vscode.window, { showWarningMessage: async () => undefined });
-            assert.equal(await app.collectKey(state, valid), false); assert.equal(secrets.length, 1);
+            assert.equal(await app.collectKey(state, valid), false);
         } finally { Object.assign(vscode.window, { showInputBox: input, showWarningMessage: warning }); app.dispose(); }
     });
 });
