@@ -187,7 +187,7 @@ def apply(plan):
                 "Open this project in VS Code. Enable Cline hooks and reload the window while Cline is idle.",
                 "Check the listed VESSEL MCP server. Keep only the intended project's VESSEL server enabled.",
                 "Configure your inference provider and key in Cline; VESSEL setup does not read that key.",
-                "Cline 4.1.17 Windows requires the documented compatibility patch; other builds need review.",
+                "Cline 4.1.17 or later is required; the compatibility patch is applied automatically on setup.",
                 "Send a fresh READY-only probe, inspect sessions, then bind the exact observed native task ID.",
                 "Use vessel launch with this state to connect the dashboard, then start capture for the bound run.",
             ],

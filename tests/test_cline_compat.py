@@ -211,7 +211,26 @@ throw new ij(Q,N)}return q}finally{b.removeListener("line",L)}
 return{query:f,result:h,success:!0}}catch(h)
 '''
     original = text.encode()
-    monkeypatch.setattr(compat, "ORIGINAL_SHA256", compat.sha(original))
+    original_sha = compat.sha(original)
+    # Inject this tiny fixture bundle into BUNDLE_SPECS so the patching logic
+    # treats it as a known verified build with 4.1.17-style symbol names.
+    fixture_spec = {
+        "cline_version": "4.1.17",
+        "patched_sha256": compat.sha(compat._apply_patch(text, {
+            "proto_create": "Iut.create", "proto_tojson": "Iut.toJSON",
+            "dispatch_sym": "Ppt", "hook_fn": "Eyr",
+            "hook_fn_end": "async function eJh(",
+            "session_cls": "gFe", "run_hooks_a": "eJh", "run_hooks_b": "tJh",
+            "error_cls": "ij", "listener_var": "b", "statemanager_cls": "hvr",
+        }).encode("utf-8")),
+        "proto_create": "Iut.create", "proto_tojson": "Iut.toJSON",
+        "dispatch_sym": "Ppt", "hook_fn": "Eyr",
+        "hook_fn_end": "async function eJh(",
+        "session_cls": "gFe", "run_hooks_a": "eJh", "run_hooks_b": "tJh",
+        "error_cls": "ij", "listener_var": "b", "statemanager_cls": "hvr",
+    }
+    monkeypatch.setitem(compat.BUNDLE_SPECS, original_sha, fixture_spec)
+    monkeypatch.setattr(compat, "ORIGINAL_SHA256", original_sha)
     extension = tmp_path / "extension"
     dist = extension / "next" / "dist"
     dist.mkdir(parents=True)

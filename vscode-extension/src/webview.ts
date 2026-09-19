@@ -30,7 +30,7 @@ export class OnboardingWebviewProvider implements vscode.WebviewViewProvider {
     static readonly viewType = 'vessel.welcomeView';
     resolveWebviewView(view: vscode.WebviewView): void {
         view.webview.options = { enableScripts: true, localResourceRoots: [] };
-        view.webview.html = htmlDocument('Welcome to VESSEL', '<h1>Welcome to VESSEL</h1><p>Protect your Cline tasks from interrupted sessions, provider failures and lost progress.</p><p>Windows x64, Python 3.11–3.14 and the exact verified Cline 4.1.17 build are required for this preview.</p><button data-action="setup">Set up VESSEL</button><button data-action="guide">Learn how it works</button><button data-action="status">Show status</button>', true);
+        view.webview.html = htmlDocument('Welcome to VESSEL', '<h1>Welcome to VESSEL</h1><p>Protect your Cline tasks from interrupted sessions, provider failures and lost progress.</p><p>Windows x64, Python 3.11–3.14 and Cline 4.1.17 or later are required for this preview.</p><button data-action="setup">Set up VESSEL</button><button data-action="guide">Learn how it works</button><button data-action="status">Show status</button>', true);
         view.webview.onDidReceiveMessage((message: { action?: string }) => {
             const command = { setup: 'vessel.setup', guide: 'vessel.openGuide', status: 'vessel.showStatus' }[message?.action ?? ''];
             if (command) { void vscode.commands.executeCommand(command); }

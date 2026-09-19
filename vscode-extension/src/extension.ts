@@ -5,7 +5,7 @@ import { detectPython } from './python';
 import { PythonCli, JsonObject } from './pythonCli';
 import { RuntimeManager } from './runtime';
 import { OnboardingWizard, secretId } from './onboarding';
-import { backupPath, detectCline, inspectCline } from './cline';
+import { backupPath, detectCline, inspectCline, isSupportedClineVersion } from './cline';
 import { OnboardingWebviewProvider, review } from './webview';
 import { diagnostics, protectionState, VesselStatusManager } from './status';
 import { Plan, Recovery, SetupState, Snapshot } from './types';
@@ -144,7 +144,7 @@ export class Controller implements vscode.Disposable {
             if (choice === 'Check again') { python = await detectPython(); } else { throw error; }
         }
         const cline = detectCline();
-        if (!cline.installed || cline.version !== '4.1.17') { throw new LocalError('unsupported_cline', 'Install the exact supported Cline 4.1.17 build. Later builds require separate verification; VESSEL will not patch them.'); }
+        if (!cline.installed || !isSupportedClineVersion(cline.version)) { throw new LocalError('unsupported_cline', 'Install Cline 4.1.17 or a later verified build. Older builds are not supported; VESSEL will not patch them.'); }
         const workspace = await this.wizard.selectWorkspace(); if (!workspace) { return; }
         const state = this.wizard.load(workspace);
         if (await vscode.window.showInformationMessage('Prepare the pinned offline VESSEL runtime in VS Code private storage? No Python or package downloads will occur.', { modal: true }, 'Prepare runtime') !== 'Prepare runtime') { return; }
