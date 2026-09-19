@@ -168,13 +168,13 @@ def mask_key(key: str) -> str:
 
 @dataclass(frozen=True)
 class OrbioCapabilities:
-    credential_validation: bool = True
+    credential_validation: bool = False
     balance_read: bool = False
     credential_rotation: bool = False
     key_claim: bool = False
     top_up: bool = False
     key_management: bool = False
-    usage_analytics: bool = True
+    usage_analytics: bool = False
 
 
 class OrbioAdapter(Protocol):
@@ -409,6 +409,7 @@ class RealOrbioAdapter:
             key_claim=self.mcp.is_configured,
             top_up=False,
             key_management=self.mcp.is_configured,
+            usage_analytics=True,
         )
 
     async def claim_key(self, name: str = "vessel-operator-key") -> dict[str, Any]:
@@ -698,7 +699,7 @@ class RealOrbioAdapter:
 class UnsupportedOrbioAdapter:
     """Legacy fail-closed adapter for environments with no verified Orbio adapter."""
 
-    capabilities = OrbioCapabilities(credential_validation=False)
+    capabilities = OrbioCapabilities()
 
     async def validate_credential(self, credential_reference: str) -> None:
         raise UnsupportedCapability("Orbio credential validation has not been verified")
@@ -711,4 +712,11 @@ class UnsupportedOrbioAdapter:
 
     async def top_up(self, account_reference: str, authorization_reference: str) -> None:
         raise UnsupportedCapability("Orbio top-up has not been verified")
+
+    async def fetch_usage_analytics(self, api_key: str) -> dict[str, Any]:
+        raise UnsupportedCapability("Orbio usage analytics has not been verified")
+
+    async def fetch_wallet_holdings(self, wallet_address: str) -> dict[str, Any]:
+        raise UnsupportedCapability("Orbio wallet holdings has not been verified")
+
 

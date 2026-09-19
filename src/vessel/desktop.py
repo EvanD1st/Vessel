@@ -30,7 +30,16 @@ def _lock(state):
 
 
 def _read(path):
-    return json.loads(_regular_file(path, 16384)) if path.exists() else {}
+    if not path.exists():
+        return {}
+    for _ in range(5):
+        try:
+            return json.loads(_regular_file(path, 16384))
+        except PermissionError:
+            time.sleep(0.05)
+        except OSError:
+            break
+    return {}
 
 
 def _write(path, value):
