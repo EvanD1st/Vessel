@@ -1496,29 +1496,38 @@ export default function Workspace({
                   <h2>Cross-System Portability Guarantees</h2>
                   <span className="pill">Fail-Closed Security</span>
                 </div>
-                <div className="panel-body space-y-3 text-xs text-slate-300">
+                <div className="panel-body">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
-                      <strong className="text-white flex items-center gap-1.5 font-bold">
-                        <LockKeyhole size={14} className="text-emerald-400" /> Zero Secret Exposure
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 transition-all hover:bg-white hover:border-emerald-300/80 hover:shadow-sm">
+                      <strong className="text-slate-900 flex items-center gap-2 font-semibold text-sm">
+                        <span className="p-1 rounded-md bg-emerald-100/70 text-emerald-700">
+                          <LockKeyhole size={14} />
+                        </span>
+                        Zero Secret Exposure
                       </strong>
-                      <p className="text-slate-400 text-[11px]">
+                      <p className="text-slate-600 text-xs leading-relaxed">
                         Raw provider API keys (like Orbio keys) never leave your local OS keychain. Identity passes export pairing references, not raw secrets.
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
-                      <strong className="text-white flex items-center gap-1.5 font-bold">
-                        <ShieldCheck size={14} className="text-cyan-400" /> Origin Lock &amp; Integrity
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 transition-all hover:bg-white hover:border-cyan-300/80 hover:shadow-sm">
+                      <strong className="text-slate-900 flex items-center gap-2 font-semibold text-sm">
+                        <span className="p-1 rounded-md bg-cyan-100/70 text-cyan-700">
+                          <ShieldCheck size={14} />
+                        </span>
+                        Origin Lock &amp; Integrity
                       </strong>
-                      <p className="text-slate-400 text-[11px]">
+                      <p className="text-slate-600 text-xs leading-relaxed">
                         Identity passes are bound to this verified dashboard HTTPS origin. Tampered passes fail validation automatically.
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
-                      <strong className="text-white flex items-center gap-1.5 font-bold">
-                        <History size={14} className="text-amber-400" /> Portable State Transfer
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 transition-all hover:bg-white hover:border-amber-300/80 hover:shadow-sm">
+                      <strong className="text-slate-900 flex items-center gap-2 font-semibold text-sm">
+                        <span className="p-1 rounded-md bg-amber-100/70 text-amber-700">
+                          <History size={14} />
+                        </span>
+                        Portable State Transfer
                       </strong>
-                      <p className="text-slate-400 text-[11px]">
+                      <p className="text-slate-600 text-xs leading-relaxed">
                         Pairing on a new computer immediately links the new system to your hosted account. Checkpoint archives can be migrated via standard local backup.
                       </p>
                     </div>
