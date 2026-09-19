@@ -11,7 +11,6 @@ import {
   Link2,
   LockKeyhole,
   Plus,
-  Radio,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -20,6 +19,12 @@ import {
   TriangleAlert,
   Settings,
   LogOut,
+  Cpu,
+  Key,
+  ExternalLink,
+  Sparkles,
+  Search,
+  Zap,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -66,6 +71,17 @@ import {
   type Session,
   type Snapshot,
   type Task,
+  type OrbioStatus,
+  type OrbioModel,
+  type OperatorIdentityCard,
+  getOrbioStatus,
+  connectOrbioKey,
+  replaceOrbioKey,
+  forgetOrbioKey,
+  refreshOrbioStatus,
+  claimOrbioKey,
+  getOrbioModels,
+  updateOrbioRouting,
 } from '@/lib/vessel';
 import {
   readPairing,
@@ -74,23 +90,30 @@ import {
   resumePairing,
   removePairing,
   startReconnection,
+  importPairingFromIdentity,
   type Pairing,
   type Connected,
 } from '@/lib/pairing';
+import { IdentityCard } from '@/components/identity-card';
+import type { AccountUser } from './account-boundary';
+
 const navigation = [
   { name: 'Overview', icon: Activity },
+  { name: 'Identity', icon: ShieldCheck },
   { name: 'Tasks', icon: CheckCheck },
   { name: 'Checkpoints', icon: Database },
   { name: 'Recovery', icon: History },
-  { name: 'Funding', icon: Wallet },
+  { name: 'Orbio', icon: Wallet },
 ];
 
 export default function Workspace({
   signedIn,
   accountId,
+  user,
 }: {
   signedIn: boolean;
   accountId: string;
+  user?: AccountUser;
 }) {
   const storedPairing = useCallback(
     (enrollmentId: string): Pairing | null => {
@@ -124,6 +147,28 @@ export default function Workspace({
   const [taskRun, setTaskRun] = useState(''),
     [taskState, setTaskState] = useState('all'),
     [taskSearch, setTaskSearch] = useState('');
+  const [orbio, setOrbio] = useState<OrbioStatus | null>(null),
+    [orbioLoading, setOrbioLoading] = useState(false),
+    [orbioError, setOrbioError] = useState(''),
+    [orbioKeyInput, setOrbioKeyInput] = useState(''),
+    [orbioConnecting, setOrbioConnecting] = useState(false),
+    [replacingOrbio, setReplacingOrbio] = useState(false),
+    [replaceKeyInput, setReplaceKeyInput] = useState(''),
+    [replaceModalOpen, setReplaceModalOpen] = useState(false),
+    [forgetModalOpen, setForgetModalOpen] = useState(false),
+    [forgettingOrbio, setForgettingOrbio] = useState(false),
+    [refreshingOrbio, setRefreshingOrbio] = useState(false);
+  const [modelsCatalog, setModelsCatalog] = useState<OrbioModel[]>([]),
+    [activeGatewayModel, setActiveGatewayModel] = useState('openrouter/auto'),
+    [isSmartRouting, setIsSmartRouting] = useState(false),
+    [modelsLoading, setModelsLoading] = useState(false),
+    [modelSearch, setModelSearch] = useState(''),
+    [selectedProviderFilter, setSelectedProviderFilter] = useState('all'),
+    [updatingRouting, setUpdatingRouting] = useState(false),
+    [claimingKey, setClaimingKey] = useState(false),
+    [claimNoticeModalOpen, setClaimNoticeModalOpen] = useState(false),
+    [claimNotice, setClaimNotice] = useState<{ status: string; message: string; url?: string } | null>(null);
+  const [currentPairing, setCurrentPairing] = useState<Pairing | null>(null);
   const sessionRef = useRef<Session | null>(null),
     polling = useRef(false),
     snapshotRef = useRef<Snapshot | null>(null),
@@ -131,6 +176,42 @@ export default function Workspace({
   const pairingRef = useRef<Pairing | null>(null),
     connectionGeneration = useRef(0),
     reconnectAllowed = useRef(true);
+  const loadOrbioModels = useCallback(async (targetSession?: Session | null) => {
+    const activeSession = targetSession ?? sessionRef.current;
+    if (!activeSession) return;
+    setModelsLoading(true);
+    try {
+      const data = await getOrbioModels(activeSession);
+      setModelsCatalog(data.models);
+      setActiveGatewayModel(data.active_model);
+      setIsSmartRouting(data.smart_routing);
+    } catch {
+      // Fallback gracefully
+    } finally {
+      setModelsLoading(false);
+    }
+  }, []);
+  const loadOrbio = useCallback(async (targetSession?: Session | null) => {
+    const activeSession = targetSession ?? sessionRef.current;
+    if (!activeSession) {
+      setOrbio(null);
+      return;
+    }
+    setOrbioLoading(true);
+    try {
+      const status = await getOrbioStatus(activeSession);
+      setOrbio(status);
+      if (status.connected) {
+        void loadOrbioModels(activeSession);
+      }
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Orbio status is unavailable.',
+      );
+    } finally {
+      setOrbioLoading(false);
+    }
+  }, [loadOrbioModels]);
   const acceptConnection = useCallback((connected: Connected) => {
     sessionRef.current = connected.session;
     pairingRef.current = connected.pairing;
@@ -138,9 +219,11 @@ export default function Workspace({
     liveRef.current = true;
     setSession(connected.session);
     setSnapshot(connected.snapshot);
+    setCurrentPairing(connected.pairing);
     setLive(true);
     setConnectionError('');
-  }, []);
+    void loadOrbio(connected.session);
+  }, [loadOrbio]);
   useEffect(() => {
     snapshotRef.current = snapshot;
     liveRef.current = live;
@@ -197,6 +280,59 @@ export default function Workspace({
       setSavedLoading(false);
     }
   }, [signedIn]);
+
+  const operatorProfile = {
+    id: user?.userId || accountId || 'usr_operator',
+    name: user?.displayName || (user?.email ? user.email.split('@')[0] : 'VESSEL Operator'),
+    email: user?.email || 'operator@vessel-dashboard.cloud-ip.cc',
+    role: user?.role,
+  };
+
+  const activePairing =
+    currentPairing ||
+    (saved[0] ? storedPairing(saved[0].enrollmentId) : null);
+
+  const handleImportIdentity = useCallback(
+    (importedCard: OperatorIdentityCard) => {
+      try {
+        const storage = accountStorage(localStorage, accountId);
+        const pairing = importPairingFromIdentity(storage, importedCard);
+        if (pairing) {
+          pairingRef.current = pairing;
+          if (signedIn) {
+            void fetch('/api/connections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                enrollmentId: pairing.enrollmentId,
+                label: importedCard.operator.name
+                  ? `${importedCard.operator.name} Companion`
+                  : 'Imported Companion',
+                port: pairing.port,
+              }),
+            }).then(() => void loadSaved());
+          }
+          void resumePairing(pairing)
+            .then(acceptConnection)
+            .catch((err) => {
+              setConnectionError(
+                err instanceof Error
+                  ? err.message
+                  : 'Companion awaiting startup on this system (port ' +
+                      pairing.port +
+                      ').',
+              );
+            });
+        }
+      } catch (err) {
+        setConnectionError(
+          err instanceof Error ? err.message : 'Could not import identity.',
+        );
+      }
+    },
+    [accountId, signedIn, loadSaved, acceptConnection],
+  );
+
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadSaved();
@@ -275,6 +411,7 @@ export default function Workspace({
       setSnapshot(state);
       setLive(true);
       setConnectionError('');
+      void loadOrbio(current);
     } catch (error) {
       if (sessionRef.current === current) {
         setLive(false);
@@ -287,7 +424,7 @@ export default function Workspace({
     } finally {
       polling.current = false;
     }
-  }, [acceptConnection]);
+  }, [acceptConnection, loadOrbio]);
   useEffect(() => {
     if (!session) return;
     const timer = setInterval(() => {
@@ -310,48 +447,32 @@ export default function Workspace({
     reconnectAllowed.current = false;
     const generation = ++connectionGeneration.current;
     try {
-      const connected = await pairCompanion(connectionLink(link), label.trim());
+      const paired = await pairCompanion(connectionLink(link), label.trim());
       if (generation !== connectionGeneration.current) return;
-      const { session: next, snapshot: state } = connected;
-      acceptConnection(connected);
+      savePairing(accountStorage(localStorage, accountId), paired.pairing);
       setConnecting(false);
       setLink('');
-      setTaskRun('');
+      acceptConnection(paired);
       setMessage(
-        'Companion connected. Review the current run before starting background capture.',
+        `Paired with companion on port ${paired.session.port}. This browser can reconnect automatically.`,
       );
-      try {
-        savePairing(accountStorage(localStorage, accountId), connected.pairing);
-      } catch {
-        setMessage(
-          'Connected for this visit, but this browser could not save its device pairing.',
-        );
-      }
-
-      try {
-        const response = await fetch('/api/connections', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            enrollmentId: state.enrollment.id,
-            label: label.trim(),
-            port: next.port,
-          }),
-        });
-        const data = (await response.json()) as {
-          error?: string;
-          connections: Connection[];
-        };
-        if (!response.ok) throw new Error(data.error);
-        await loadSaved();
-      } catch (error) {
-        setSavedError(
-          error instanceof Error
-            ? error.message
-            : 'Connected locally, but the label could not be saved.',
-        );
-      }
+      const response = await fetch('/api/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enrollmentId: paired.snapshot.enrollment.id,
+          label: label.trim(),
+          port: paired.session.port,
+        }),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        connections: Connection[];
+      };
+      if (!response.ok) throw new Error(data.error);
+      setSaved(data.connections);
     } catch (error) {
+      if (generation !== connectionGeneration.current) return;
       setConnectError(
         error instanceof Error
           ? error.message
@@ -366,14 +487,175 @@ export default function Workspace({
     reconnectAllowed.current = false;
     sessionRef.current = null;
     pairingRef.current = null;
+    setCurrentPairing(null);
     setSession(null);
     setSnapshot(null);
     setLive(false);
+    setOrbio(null);
+    setOrbioError('');
     setAction(null);
     setConnectionError('');
     setMessage(
       'Dashboard disconnected. Background capture continues in the local companion until that process stops.',
     );
+  }
+  async function handleConnectOrbio(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const current = sessionRef.current;
+    if (!current || !orbioKeyInput.trim()) return;
+    setOrbioConnecting(true);
+    setOrbioError('');
+    const rawKey = orbioKeyInput.trim();
+    setOrbioKeyInput('');
+    try {
+      const result = await connectOrbioKey(current, rawKey);
+      setMessage(`Orbio key connected and verified (${result.masked_key}).`);
+      await loadOrbio(current);
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to connect Orbio key.',
+      );
+    } finally {
+      setOrbioConnecting(false);
+    }
+  }
+  async function handleReplaceOrbio(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const current = sessionRef.current;
+    if (!current || !replaceKeyInput.trim()) return;
+    setReplacingOrbio(true);
+    setOrbioError('');
+    const rawKey = replaceKeyInput.trim();
+    setReplaceKeyInput('');
+    try {
+      const result = await replaceOrbioKey(current, rawKey);
+      setMessage(`Orbio key replaced and verified (${result.masked_key}).`);
+      setReplaceModalOpen(false);
+      await loadOrbio(current);
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to replace Orbio key.',
+      );
+    } finally {
+      setReplacingOrbio(false);
+    }
+  }
+  async function handleForgetOrbio() {
+    const current = sessionRef.current;
+    if (!current) return;
+    setForgettingOrbio(true);
+    setOrbioError('');
+    try {
+      await forgetOrbioKey(current);
+      setMessage(
+        'Orbio credential removed. Gateway paused. Recovery history preserved.',
+      );
+      setForgetModalOpen(false);
+      await loadOrbio(current);
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to forget Orbio key.',
+      );
+    } finally {
+      setForgettingOrbio(false);
+    }
+  }
+  async function handleRefreshOrbio() {
+    const current = sessionRef.current;
+    if (!current) return;
+    setRefreshingOrbio(true);
+    setOrbioError('');
+    try {
+      const status = await refreshOrbioStatus(current);
+      setOrbio(status);
+      setMessage('Orbio gateway status refreshed.');
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to refresh Orbio status.',
+      );
+    } finally {
+      setRefreshingOrbio(false);
+    }
+  }
+  async function handleClaimOrbio() {
+    const current = sessionRef.current;
+    if (!current) return;
+    setClaimingKey(true);
+    setOrbioError('');
+    try {
+      const res = await claimOrbioKey(current);
+      if (res.status === 'claimed') {
+        setMessage('Orbio API key successfully claimed and registered.');
+        await loadOrbio(current);
+      } else {
+        setClaimNotice({
+          status: res.status,
+          message:
+            res.message ||
+            'Orbio Remote MCP is not configured on this machine.',
+          url: res.url || 'https://orbio.so',
+        });
+        setClaimNoticeModalOpen(true);
+      }
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to claim key via Orbio MCP.',
+      );
+    } finally {
+      setClaimingKey(false);
+    }
+  }
+  async function handleSelectModel(modelId: string) {
+    const current = sessionRef.current;
+    if (!current) return;
+    setUpdatingRouting(true);
+    setOrbioError('');
+    try {
+      const res = await updateOrbioRouting(current, {
+        activeModel: modelId,
+        smartRouting: modelId === 'openrouter/auto',
+      });
+      setActiveGatewayModel(res.active_model);
+      setIsSmartRouting(res.smart_routing);
+      setMessage(`Inference route updated: default model set to ${res.active_model}.`);
+      await loadOrbio(current);
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to update model routing.',
+      );
+    } finally {
+      setUpdatingRouting(false);
+    }
+  }
+  async function handleToggleSmartRouting(enable: boolean) {
+    const current = sessionRef.current;
+    if (!current) return;
+    setUpdatingRouting(true);
+    setOrbioError('');
+    try {
+      const targetModel = enable
+        ? 'openrouter/auto'
+        : modelsCatalog.find((m) => m.id !== 'openrouter/auto')?.id ||
+          'anthropic/claude-sonnet-4.5';
+      const res = await updateOrbioRouting(current, {
+        activeModel: targetModel,
+        smartRouting: enable,
+      });
+      setActiveGatewayModel(res.active_model);
+      setIsSmartRouting(res.smart_routing);
+      setMessage(
+        enable
+          ? 'Smart Dynamic Routing (openrouter/auto) activated.'
+          : `Smart routing disabled. Default set to ${res.active_model}.`,
+      );
+      await loadOrbio(current);
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to toggle smart routing.',
+      );
+    } finally {
+      setUpdatingRouting(false);
+    }
   }
   async function removeSaved(enrollmentId: string, port?: number) {
     connectionGeneration.current += 1;
@@ -610,7 +892,7 @@ export default function Workspace({
         </SidebarContent>
         <SidebarFooter className="sidebar-bottom">
           <div className="custody-note">
-            <LockKeyhole size={17} />
+            <LockKeyhole size={14} />
             <div>
               Local custody<p>Project files stay on your machine.</p>
             </div>
@@ -642,12 +924,14 @@ export default function Workspace({
             <div>
               <p className="eyebrow">CONTINUITY CONTROL</p>
               <h1>
-                {view === 'Overview' ? 'Keep your work within reach.' : view}
+                {view === 'Overview' ? 'Keep your work within reach.' : view === 'Funding' ? 'Orbio' : view}
               </h1>
               <p className="subheading">
-                {view === 'Funding'
-                  ? 'Inference access and funding availability.'
-                  : 'Your agent’s progress, checkpoints and next steps.'}
+                {view === 'Orbio' || view === 'Funding'
+                  ? 'First-class inference compute, credential security and gateway status.'
+                  : view === 'Overview'
+                    ? 'Your agent’s progress, checkpoints and next steps.'
+                    : 'Continuity controls and workspace state.'}
               </p>
             </div>
             <div className="button-row">
@@ -699,41 +983,189 @@ export default function Workspace({
           )}
           {view === 'Overview' && (
             <>
-              <section className="metrics" aria-label="Workspace status">
-                <div>
-                  <span>CONNECTED COMPANIONS</span>
-                  <strong>
-                    {live ? '1' : '0'} <Radio size={22} />
-                  </strong>
-                  <p>
-                    {live
-                      ? 'Live state from this computer'
-                      : 'Waiting for a local connection'}
-                  </p>
+              <div className="overview-hero">
+                <div className="hero-status-row">
+                  <div>
+                    <span className="hero-eyebrow">AGENT CONTINUITY SYSTEM</span>
+                    <h2>
+                      {snapshot
+                        ? (saved.find(
+                            (item) =>
+                              item.enrollmentId === snapshot.enrollment.id,
+                          )?.label ?? 'Active Agent')
+                        : 'No Agent Connected'}
+                    </h2>
+                  </div>
+                  <div
+                    className={`product-badge ${
+                      !session && !snapshot
+                        ? 'pill-offline'
+                        : !live && snapshot
+                          ? 'pill-offline'
+                          : snapshot?.bridge.capture_worker_running &&
+                              (!snapshot.capture.gaps ||
+                                snapshot.capture.gaps.length === 0) &&
+                              snapshot.lease?.status === 'active'
+                            ? 'pill-protected'
+                            : 'pill-warning'
+                    }`}
+                  >
+                    <span className="badge-dot" />
+                    <span>
+                      {!session && !snapshot
+                        ? 'NOT CONNECTED'
+                        : !live && snapshot
+                          ? 'COMPANION OFFLINE'
+                          : snapshot?.bridge.capture_worker_running &&
+                              (!snapshot.capture.gaps ||
+                                snapshot.capture.gaps.length === 0) &&
+                              snapshot.lease?.status === 'active'
+                            ? 'PROTECTED'
+                            : 'SETUP REQUIRED'}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span>SAVED CHECKPOINTS</span>
-                  <strong>
-                    {snapshot?.checkpoints.length ?? '—'} <Database size={22} />
-                  </strong>
-                  <p>
-                    {snapshot
-                      ? `Latest: ${when(snapshot.recovery_window.last_checkpoint_at)}`
-                      : 'No capture history received'}
-                  </p>
+
+                {snapshot && (
+                  <div className="mission-card">
+                    <div className="mission-header">
+                      <span className="mission-label">CURRENT MISSION</span>
+                      <span className="agent-badge">
+                        {saved.find(
+                          (item) =>
+                            item.enrollmentId === snapshot.enrollment.id,
+                        )?.label ?? 'Workspace'}
+                      </span>
+                    </div>
+                    <h3 className="mission-title">{snapshot.policy.mission}</h3>
+                    <p className="mission-path">
+                      {snapshot.enrollment.workspace}
+                    </p>
+                    <div className="mission-meta-grid">
+                      <div className="meta-item">
+                        <span className="meta-label">CURRENT SESSION</span>
+                        <span className="meta-value">
+                          {currentRun?.native_session_id
+                            ? short(currentRun.native_session_id)
+                            : 'Unbound'}
+                        </span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-label">EXECUTION LEASE</span>
+                        <span className="meta-value">
+                          {snapshot.lease
+                            ? `${snapshot.lease.execution_epoch} · ${snapshot.lease.status}`
+                            : 'No lease'}
+                        </span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-label">CAPTURE WORKER</span>
+                        <span className="meta-value">
+                          {snapshot.bridge.capture_worker_running
+                            ? 'Watching'
+                            : 'Stopped'}
+                        </span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-label">INFERENCE PROVIDER</span>
+                        <span
+                          className="meta-value"
+                          style={{
+                            color: orbio?.connected ? '#2e7d32' : undefined,
+                          }}
+                        >
+                          {orbio?.connected
+                            ? 'Orbio (Connected)'
+                            : 'Local Gateway'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="protection-matrix">
+                  <div className="matrix-card">
+                    <div className="matrix-head">
+                      <Database size={16} />
+                      <span>CHECKPOINT PROTECTION</span>
+                    </div>
+                    <div className="matrix-val">
+                      {snapshot
+                        ? `${snapshot.checkpoints.length} Checkpoints`
+                        : '0 Checkpoints'}
+                    </div>
+                    <p className="matrix-sub">
+                      {snapshot
+                        ? `Latest: ${when(snapshot.recovery_window.last_checkpoint_at)}`
+                        : 'No capture history received'}
+                    </p>
+                  </div>
+
+                  <div className="matrix-card">
+                    <div className="matrix-head">
+                      <History size={16} />
+                      <span>RECOVERY READINESS</span>
+                    </div>
+                    <div className="matrix-val">
+                      {snapshot?.policy.recovery_allowed
+                        ? 'Standby Ready'
+                        : 'Review Required'}
+                    </div>
+                    <p className="matrix-sub">
+                      Verified backup:{' '}
+                      {when(
+                        snapshot?.recovery_window.last_verified_backup
+                          ?.created_at,
+                      ) || 'None'}
+                    </p>
+                  </div>
+
+                  <div className="matrix-card">
+                    <div className="matrix-head">
+                      <Activity size={16} />
+                      <span>EXECUTION CONTINUITY</span>
+                    </div>
+                    <div className="matrix-val">
+                      {live ? 'Live Stream' : 'Disconnected'}
+                    </div>
+                    <p className="matrix-sub">
+                      {snapshot?.lease
+                        ? `Epoch ${snapshot.lease.execution_epoch} · ${snapshot.lease.status}`
+                        : 'Waiting for conversation lease'}
+                    </p>
+                  </div>
+
+                  <div className="matrix-card">
+                    <div className="matrix-head">
+                      <Cpu size={16} />
+                      <span>INFERENCE GATEWAY</span>
+                    </div>
+                    <div className="matrix-val">
+                      {orbio?.connected
+                        ? orbio.probe_status === 'ok'
+                          ? 'Orbio Active'
+                          : 'Probe Degraded'
+                        : 'Not Connected'}
+                    </div>
+                    <p className="matrix-sub">
+                      {orbio?.connected
+                        ? orbio.balance?.available &&
+                          orbio.balance.amount !== null
+                          ? `Balance: ${orbio.balance.amount} ${orbio.balance.currency}`
+                          : 'Credential encrypted & active'
+                        : 'Connect Orbio for remote inference'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <span>LAST VERIFIED BACKUP</span>
-                  <strong className="metric-date">
-                    {when(
-                      snapshot?.recovery_window.last_verified_backup
-                        ?.created_at,
-                    )}{' '}
-                    <ShieldCheck size={22} />
-                  </strong>
-                  <p>Same-user local backup</p>
-                </div>
-              </section>
+              </div>
+              <div className="my-6">
+                <IdentityCard
+                  operator={operatorProfile}
+                  origin={origin}
+                  pairing={activePairing}
+                  onImportIdentity={handleImportIdentity}
+                />
+              </div>
               {snapshot ? (
                 <div className="overview-grid">
                   <section className="panel">
@@ -1031,6 +1463,69 @@ export default function Workspace({
                 )}
               </section>
             </>
+          )}
+          {view === 'Identity' && (
+            <div className="space-y-6">
+              <div className="overview-hero">
+                <div className="hero-status-row">
+                  <div>
+                    <span className="hero-eyebrow">PORTABLE IDENTITY & REPUTATION</span>
+                    <h2>Operator Identity Vault</h2>
+                  </div>
+                  <div className="product-badge pill-protected">
+                    <span className="badge-dot" />
+                    <span>ZERO-KNOWLEDGE AUTH</span>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-400 font-mono">
+                  Your identity card allows you to move seamlessly to a different PC or operating system without losing your dashboard pairing or starting from scratch.
+                </p>
+              </div>
+
+              <div className="my-6">
+                <IdentityCard
+                  operator={operatorProfile}
+                  origin={origin}
+                  pairing={activePairing}
+                  onImportIdentity={handleImportIdentity}
+                />
+              </div>
+
+              <section className="panel">
+                <div className="section-heading">
+                  <h2>Cross-System Portability Guarantees</h2>
+                  <span className="pill">Fail-Closed Security</span>
+                </div>
+                <div className="panel-body space-y-3 text-xs text-slate-300">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
+                      <strong className="text-white flex items-center gap-1.5 font-bold">
+                        <LockKeyhole size={14} className="text-emerald-400" /> Zero Secret Exposure
+                      </strong>
+                      <p className="text-slate-400 text-[11px]">
+                        Raw provider API keys (like Orbio keys) never leave your local OS keychain. Identity passes export pairing references, not raw secrets.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
+                      <strong className="text-white flex items-center gap-1.5 font-bold">
+                        <ShieldCheck size={14} className="text-cyan-400" /> Origin Lock &amp; Integrity
+                      </strong>
+                      <p className="text-slate-400 text-[11px]">
+                        Identity passes are bound to this verified dashboard HTTPS origin. Tampered passes fail validation automatically.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3.5 space-y-1.5">
+                      <strong className="text-white flex items-center gap-1.5 font-bold">
+                        <History size={14} className="text-amber-400" /> Portable State Transfer
+                      </strong>
+                      <p className="text-slate-400 text-[11px]">
+                        Pairing on a new computer immediately links the new system to your hosted account. Checkpoint archives can be migrated via standard local backup.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
           )}
           {view === 'Tasks' &&
             (snapshot ? (
@@ -1490,48 +1985,461 @@ export default function Workspace({
                 onConnect={() => setConnecting(true)}
               />
             ))}
-          {view === 'Funding' && (
-            <section className="panel">
-              <div className="section-heading">
-                <h2>Inference access</h2>
-                <span className="pill">Setup required</span>
-              </div>
-              <div className="panel-body funding-content">
-                <div className="empty-icon">
-                  <Wallet size={32} />
+          {(view === 'Orbio' || view === 'Funding') && (
+            <div className="orbio-container">
+              {!session ? (
+                <Disconnected
+                  section="Orbio inference & credentials"
+                  onConnect={() => setConnecting(true)}
+                />
+              ) : orbioLoading && !orbio ? (
+                <div className="empty-inline" style={{ padding: 48, textAlign: 'center' }}>
+                  <RefreshCw className="animate-spin" size={24} style={{ margin: '0 auto 12px' }} />
+                  <p>Loading Orbio status from companion…</p>
                 </div>
-                <h2>Funding is not connected.</h2>
-                <p>
-                  VESSEL currently provides local continuity and a configurable
-                  inference gateway. Live Orbio account management, wallet
-                  ownership, balance reporting and funded model recovery are
-                  still pending.
-                </p>
-                <dl className="facts">
-                  <div>
-                    <dt>Wallet ownership</dt>
-                    <dd>Not implemented</dd>
+              ) : !orbio?.connected ? (
+                <div className="orbio-onboarding">
+                  <div className="orbio-card">
+                    <div className="orbio-card-header">
+                      <span className="orbio-brand-badge">ORBIO INTEGRATION</span>
+                      <h3>Connect Orbio to VESSEL</h3>
+                      <p>
+                        Route agent model inference through Orbio’s compute network. VESSEL validates credentials locally, stores them in encrypted OS storage, and manages model routing via local companion gateway.
+                      </p>
+                    </div>
+
+                    <div className="security-guarantee-box">
+                      <ShieldCheck className="guarantee-icon" size={24} />
+                      <div className="guarantee-text">
+                        <strong>Local Security Guarantee</strong>
+                        <p>
+                          Your raw Orbio API key never leaves this machine unencrypted. It is stored exclusively in DPAPI local storage on 127.0.0.1 and never sent to cloud servers, hosted databases, or web browsers.
+                        </p>
+                      </div>
+                    </div>
+
+                    <form className="orbio-form" onSubmit={handleConnectOrbio}>
+                      <div className="form-field">
+                        <label htmlFor="orbio-api-key">Orbio API Key</label>
+                        <Input
+                          id="orbio-api-key"
+                          type="password"
+                          autoComplete="off"
+                          value={orbioKeyInput}
+                          onChange={(e) => setOrbioKeyInput(e.target.value)}
+                          placeholder="sk-orbio-..."
+                          required
+                          spellCheck={false}
+                        />
+                        <small>Key format: sk-orbio-... (validated locally via probe before saving)</small>
+                      </div>
+
+                      {orbioError && (
+                        <div role="alert" className="notice error">
+                          <TriangleAlert size={16} />
+                          <span>{orbioError}</span>
+                        </div>
+                      )}
+
+                      <div className="button-row" style={{ marginTop: 6 }}>
+                        <Button
+                          type="submit"
+                          disabled={orbioConnecting || !orbioKeyInput.trim()}
+                          className="primary-action"
+                        >
+                          {orbioConnecting ? 'Validating & Connecting…' : 'Connect Orbio Key'}
+                          <Key size={16} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={claimingKey}
+                          onClick={() => void handleClaimOrbio()}
+                        >
+                          <Sparkles size={16} style={{ color: '#00d2ff' }} />
+                          {claimingKey ? 'Checking Orbio MCP…' : 'Claim via Orbio MCP'}
+                        </Button>
+                      </div>
+                    </form>
+
+                    <div className="orbio-info-grid">
+                      <div className="info-item">
+                        <strong>Claim via Orbio MCP</strong>
+                        <p>
+                          Hold $ORBIO at{' '}
+                          <a
+                            href="https://orbio.so"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="external-link-btn"
+                            style={{ padding: '2px 0' }}
+                          >
+                            orbio.so <ExternalLink size={12} />
+                          </a>{' '}
+                          to auto-claim streaming inference credits.
+                        </p>
+                      </div>
+                      <div className="info-item">
+                        <strong>Need an API key?</strong>
+                        <p>
+                          <a
+                            href="https://orbio.so"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="external-link-btn"
+                            style={{ padding: '4px 0' }}
+                          >
+                            Get key on orbio.so <ExternalLink size={12} />
+                          </a>
+                        </p>
+                      </div>
+                      <div className="info-item">
+                        <strong>Documentation</strong>
+                        <p>
+                          <a
+                            href="https://orbio.net/docs"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="external-link-btn"
+                            style={{ padding: '4px 0' }}
+                          >
+                            Explore docs <ExternalLink size={12} />
+                          </a>
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <dt>Orbio funding & key rotation</dt>
-                    <dd>Unavailable</dd>
+                </div>
+              ) : (
+                <>
+                  <div className="hero-status-row">
+                    <div>
+                      <span className="hero-eyebrow">INFERENCE ENGINE</span>
+                      <h2>Orbio Compute Network</h2>
+                    </div>
+                    <div className={`product-badge ${orbio.probe_status === 'ok' ? 'pill-protected' : 'pill-degraded'}`}>
+                      <span className="badge-dot" />
+                      <span>{orbio.probe_status === 'ok' ? 'Connected' : 'Probe Degraded'}</span>
+                    </div>
                   </div>
-                  <div>
-                    <dt>Live gateway inference</dt>
-                    <dd>Not verified</dd>
+
+                  {orbioError && (
+                    <div role="alert" className="notice error">
+                      <TriangleAlert size={16} />
+                      <span>{orbioError}</span>
+                    </div>
+                  )}
+
+                  <div className="orbio-connected-grid">
+                    <div className="card-panel">
+                      <div className="card-panel-header">
+                        <span className="card-tag">AUTHENTICATION</span>
+                        <h4>Encrypted Credential</h4>
+                      </div>
+                      <div className="credential-display">
+                        <span className="key-code">{orbio.masked_key}</span>
+                        <span className="status-indicator">
+                          <span className={`dot ${orbio.probe_status === 'ok' ? 'dot-green' : 'pill-degraded'}`} />
+                          {orbio.probe_status === 'ok' ? 'Active' : 'Unhealthy'}
+                        </span>
+                      </div>
+                      <dl className="facts-mini">
+                        <div>
+                          <dt>Storage Type</dt>
+                          <dd>DPAPI Local (127.0.0.1)</dd>
+                        </div>
+                        <div>
+                          <dt>Probe Health</dt>
+                          <dd>{orbio.probe_status}</dd>
+                        </div>
+                        <div>
+                          <dt>Remote MCP</dt>
+                          <dd>{orbio.mcp.configured ? 'Configured' : 'Fail-Closed / Unavailable'}</dd>
+                        </div>
+                      </dl>
+                      <div className="button-row" style={{ marginTop: 'auto' }}>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setOrbioError('');
+                            setReplaceModalOpen(true);
+                          }}
+                        >
+                          <Key size={14} />
+                          Replace Key
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setOrbioError('');
+                            setForgetModalOpen(true);
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          Forget Key
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="card-panel">
+                      <div className="card-panel-header">
+                        <span className="card-tag">ACCOUNT HEALTH</span>
+                        <h4>Inference & Balance</h4>
+                      </div>
+                      <div className="balance-display">
+                        {orbio.balance.available && orbio.balance.amount !== null ? (
+                          <>
+                            <span className="balance-amount">{orbio.balance.amount}</span>
+                            <span className="balance-currency">{orbio.balance.currency}</span>
+                          </>
+                        ) : (
+                          <div>
+                            <span className="balance-amount">—</span>{' '}
+                            <span className="balance-currency">CREDIT</span>
+                            <p className="balance-reason">
+                              {orbio.balance.reason || 'Remote balance unavailable over direct gateway. Inference active.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <dl className="facts-mini">
+                        <div>
+                          <dt>Usage Reported</dt>
+                          <dd>
+                            {orbio.usage.available && orbio.usage.amount !== null
+                              ? `${orbio.usage.amount} ${orbio.usage.currency}`
+                              : 'Via Orbio Console'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Management Mode</dt>
+                          <dd>{orbio.mcp.configured ? 'Remote MCP' : 'Gateway-Only'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+
+                    <div className="card-panel">
+                      <div className="card-panel-header">
+                        <span className="card-tag">LOCAL RUNTIME</span>
+                        <h4>Inference Gateway</h4>
+                      </div>
+                      <div className="gateway-status-row">
+                        <span className={`status-pill ${orbio.gateway.running ? 'pill-green' : 'pill-yellow'}`}>
+                          {orbio.gateway.running ? 'Active Proxy' : 'Standby'}
+                        </span>
+                        <span className="port-badge">Port {orbio.gateway.port}</span>
+                      </div>
+                      <p className="path-text" style={{ fontSize: 12 }}>
+                        {orbio.gateway.base_url}
+                      </p>
+                      <div className="models-list">
+                        <span className="models-title">ACTIVE DEFAULT ROUTE</span>
+                        <div className="model-tags">
+                          <span className="model-chip highlight">
+                            {isSmartRouting
+                              ? 'openrouter/auto (Smart Dynamic)'
+                              : activeGatewayModel || (orbio.gateway.models && orbio.gateway.models[0]) || 'claude-sonnet-4.5'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <dt>Balance</dt>
-                    <dd>Not available</dd>
+
+                  <div className="orbio-models-panel">
+                    <div className="models-panel-header">
+                      <div>
+                        <span className="card-tag">MODEL INTELLIGENCE</span>
+                        <h4>Model Routing & Catalog</h4>
+                        <p>
+                          Select which frontier model powers your local gateway (`http://127.0.0.1:{orbio.gateway.port}/v1`), or activate OpenRouter’s dynamic auto-router.
+                        </p>
+                      </div>
+                      <div className="smart-routing-card">
+                        <div className="smart-routing-info">
+                          <strong>
+                            <Zap size={16} style={{ color: isSmartRouting ? '#00d2ff' : 'var(--muted)' }} />
+                            Smart Dynamic Routing (`openrouter/auto`)
+                          </strong>
+                          <p>
+                            {isSmartRouting
+                              ? 'Active: OpenRouter automatically picks the best price & speed per prompt.'
+                              : 'Disabled: Fixed routing to your selected default model below.'}
+                          </p>
+                        </div>
+                        <Button
+                          variant={isSmartRouting ? 'default' : 'outline'}
+                          size="sm"
+                          disabled={updatingRouting}
+                          onClick={() => void handleToggleSmartRouting(!isSmartRouting)}
+                        >
+                          {updatingRouting ? 'Updating…' : isSmartRouting ? 'Active (Auto)' : 'Enable Auto'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="models-search-row">
+                      <div className="models-search-input" style={{ position: 'relative' }}>
+                        <Search
+                          size={15}
+                          style={{
+                            position: 'absolute',
+                            left: 12,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: 'var(--muted)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                        <Input
+                          style={{ paddingLeft: 36 }}
+                          placeholder="Search models (e.g. claude, deepseek, gpt-4o, llama)..."
+                          value={modelSearch}
+                          onChange={(e) => setModelSearch(e.target.value)}
+                        />
+                      </div>
+                      <div className="filter-chips">
+                        {['all', 'recommended', 'anthropic', 'deepseek', 'openai'].map((filter) => (
+                          <button
+                            key={filter}
+                            type="button"
+                            className={`filter-chip ${selectedProviderFilter === filter ? 'active' : ''}`}
+                            onClick={() => setSelectedProviderFilter(filter)}
+                          >
+                            {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {modelsLoading && modelsCatalog.length === 0 ? (
+                      <div className="empty-inline" style={{ padding: 24, textAlign: 'center' }}>
+                        <RefreshCw className="animate-spin" size={20} style={{ margin: '0 auto 8px' }} />
+                        <p>Loading model catalog from OpenRouter…</p>
+                      </div>
+                    ) : (
+                      <div className="models-grid">
+                        {modelsCatalog
+                          .filter((model) => {
+                            if (modelSearch.trim()) {
+                              const q = modelSearch.toLowerCase();
+                              if (
+                                !model.name.toLowerCase().includes(q) &&
+                                !model.id.toLowerCase().includes(q) &&
+                                !(model.description || '').toLowerCase().includes(q)
+                              ) {
+                                return false;
+                              }
+                            }
+                            if (selectedProviderFilter === 'recommended') return !!model.recommended;
+                            if (selectedProviderFilter === 'anthropic') return model.id.startsWith('anthropic/');
+                            if (selectedProviderFilter === 'deepseek') return model.id.startsWith('deepseek/');
+                            if (selectedProviderFilter === 'openai') return model.id.startsWith('openai/');
+                            return true;
+                          })
+                          .slice(0, 18)
+                          .map((model) => {
+                            const isActive =
+                              (isSmartRouting && model.id === 'openrouter/auto') ||
+                              (!isSmartRouting && activeGatewayModel === model.id);
+                            return (
+                              <div key={model.id} className={`model-card ${isActive ? 'is-active' : ''}`}>
+                                <div className="model-card-header">
+                                  <div>
+                                    <div className="model-name">{model.name}</div>
+                                    <div className="model-slug">{model.id}</div>
+                                  </div>
+                                  {model.recommended && (
+                                    <span className="meta-pill recommended">Recommended</span>
+                                  )}
+                                </div>
+                                <div className="model-card-meta">
+                                  <span className="meta-pill">
+                                    {(model.context_length / 1000).toFixed(0)}k context
+                                  </span>
+                                  <span className="pricing-text">
+                                    {model.pricing.prompt === 'Variable'
+                                      ? 'Auto Pricing'
+                                      : `$${(Number(model.pricing.prompt) * 1000000).toFixed(2)}/1M in`}
+                                  </span>
+                                </div>
+                                {model.description && (
+                                  <p className="model-description">{model.description}</p>
+                                )}
+                                <div className="model-card-footer">
+                                  {isActive ? (
+                                    <span className="status-indicator">
+                                      <span className="dot dot-green" />
+                                      Active Gateway Default
+                                    </span>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={updatingRouting}
+                                      onClick={() => void handleSelectModel(model.id)}
+                                    >
+                                      Set as Default
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
                   </div>
-                </dl>
-                <p>
-                  Continue using your existing Cline inference configuration.
-                  Funding setup requires a supported provider and owner-approved
-                  model access.
-                </p>
-              </div>
-            </section>
+
+                  <div className="orbio-actions-bar">
+                    <div className="left-actions">
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleRefreshOrbio()}
+                        disabled={refreshingOrbio}
+                      >
+                        <RefreshCw size={14} className={refreshingOrbio ? 'animate-spin' : ''} />
+                        {refreshingOrbio ? 'Refreshing…' : 'Refresh Status'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleClaimOrbio()}
+                        disabled={claimingKey}
+                      >
+                        <Sparkles size={14} style={{ color: '#00d2ff' }} />
+                        {claimingKey ? 'Checking MCP…' : 'Claim via Orbio MCP'}
+                      </Button>
+                      <a
+                        href="https://orbio.so"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="external-link-btn"
+                      >
+                        Manage Account on Orbio <ExternalLink size={14} />
+                      </a>
+                    </div>
+                    <div className="right-actions">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setOrbioError('');
+                          setReplaceModalOpen(true);
+                        }}
+                      >
+                        Replace Key
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setOrbioError('');
+                          setForgetModalOpen(true);
+                        }}
+                      >
+                        Forget Key
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <footer className="page-footer">
             <span>
@@ -1663,8 +2571,188 @@ export default function Workspace({
           )}
           <small>
             One active local connection per tab. Signed in with your VESSEL
-            account. Wallet ownership is pending.
+            account. Encrypted local persistence & zero-knowledge security.
           </small>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={replaceModalOpen}
+        onOpenChange={(open) => {
+          if (!replacingOrbio) {
+            setReplaceModalOpen(open);
+            if (!open) {
+              setReplaceKeyInput('');
+              setOrbioError('');
+            }
+          }
+        }}
+      >
+        <DialogContent className="owner-dialog">
+          <DialogHeader>
+            <DialogTitle>Replace Orbio API Key</DialogTitle>
+            <DialogDescription>
+              Enter a new Orbio key. VESSEL will validate the key locally via gateway probe before updating your local encrypted store.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="owner-form" onSubmit={handleReplaceOrbio}>
+            <div className="form-field">
+              <label htmlFor="replace-orbio-key">New Orbio API Key</label>
+              <Input
+                id="replace-orbio-key"
+                type="password"
+                autoComplete="off"
+                value={replaceKeyInput}
+                onChange={(e) => setReplaceKeyInput(e.target.value)}
+                required
+                spellCheck={false}
+                placeholder="sk-orbio-..."
+              />
+              <small>
+                Transmitted directly to 127.0.0.1 and validated before saving. Previous key remains active if validation fails.
+              </small>
+            </div>
+            {orbioError && (
+              <div role="alert" className="notice error">
+                <TriangleAlert size={16} />
+                <span>{orbioError}</span>
+              </div>
+            )}
+            <div className="button-row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReplaceModalOpen(false)}
+                disabled={replacingOrbio}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={replacingOrbio || !replaceKeyInput.trim()}
+              >
+                {replacingOrbio ? 'Validating & Replacing…' : 'Replace Key'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={forgetModalOpen}
+        onOpenChange={(open) => {
+          if (!forgettingOrbio) {
+            setForgetModalOpen(open);
+            if (!open) setOrbioError('');
+          }
+        }}
+      >
+        <DialogContent className="owner-dialog">
+          <DialogHeader>
+            <DialogTitle>Forget Orbio API Key</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to forget your Orbio API key? This permanently deletes the encrypted credential from local storage.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="review-context">
+            <p>
+              Inference through the local gateway will pause until a new credential is provided.
+            </p>
+            <p>
+              <strong>Continuity guarantee:</strong> All previous checkpoints, session recovery state, and task history are fully preserved.
+            </p>
+          </div>
+          {orbioError && (
+            <div role="alert" className="notice error">
+              <TriangleAlert size={16} />
+              <span>{orbioError}</span>
+            </div>
+          )}
+          <div className="button-row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setForgetModalOpen(false)}
+              disabled={forgettingOrbio}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleForgetOrbio()}
+              disabled={forgettingOrbio}
+            >
+              {forgettingOrbio ? 'Forgetting…' : 'Forget Key'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={claimNoticeModalOpen} onOpenChange={setClaimNoticeModalOpen}>
+        <DialogContent className="modal-content">
+          <DialogHeader>
+            <DialogTitle>Claim Key via Orbio MCP</DialogTitle>
+            <DialogDescription>
+              Orbio keys are self-sovereign OpenRouter keys funded by $ORBIO staking.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="claim-modal-body">
+            <div className="claim-step-item">
+              <span className="claim-step-num">1</span>
+              <div>
+                <strong>Hold $ORBIO & Connect Wallet</strong>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
+                  Connect your wallet on{' '}
+                  <a
+                    href="https://orbio.so"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: 'var(--primary)', textDecoration: 'underline' }}
+                  >
+                    orbio.so
+                  </a>
+                  . The protocol streams inference credits directly to your holding address.
+                </p>
+              </div>
+            </div>
+            <div className="claim-step-item">
+              <span className="claim-step-num">2</span>
+              <div>
+                <strong>Auto-Claim via Orbio MCP Tool</strong>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
+                  When the Orbio Remote MCP is registered in your environment, VESSEL invokes{' '}
+                  <code>orbio_claim_key</code> to automatically mint and rotate your key without copying secrets.
+                </p>
+              </div>
+            </div>
+            <div className="claim-step-item">
+              <span className="claim-step-num">3</span>
+              <div>
+                <strong>Manual Key Entry Option</strong>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
+                  You can also claim your key directly on the Orbio dashboard and connect it above using the standard{' '}
+                  <code>sk-or-v1-...</code> or <code>sk-orbio-...</code> key input.
+                </p>
+              </div>
+            </div>
+            {claimNotice?.message && (
+              <div className="notice" style={{ marginTop: 8 }}>
+                <span>{claimNotice.message}</span>
+              </div>
+            )}
+            <div className="button-row" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+              <a
+                href={claimNotice?.url || 'https://orbio.so'}
+                target="_blank"
+                rel="noreferrer"
+                className="button primary-action"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                Open Orbio.so <ExternalLink size={14} />
+              </a>
+              <Button variant="outline" onClick={() => setClaimNoticeModalOpen(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       {action && session && (

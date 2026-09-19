@@ -1,6 +1,6 @@
 {
-  "name": "vessel",
-  "displayName": "VESSEL",
+  "name": "vessel-companion",
+  "displayName": "VESSEL - Agent Continuity",
   "description": "Protect your Cline tasks from interrupted sessions, provider failures and lost progress.",
   "version": "0.2.0",
   "license": "UNLICENSED",
@@ -19,7 +19,8 @@
     },
     "virtualWorkspaces": false
   },
-  "publisher": "vessel",
+  "publisher": "n3ythrax",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -156,7 +157,7 @@
     "compile": "tsc -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "lint": "oxlint src --deny-warnings",
-    "package:vsix": "vsce package --no-dependencies --out vessel-0.2.0.vsix",
+    "package:vsix": "vsce package --no-dependencies --out vessel-companion-0.2.0.vsix",
     "test:package": "node scripts/verify-package.cjs",
     "watch": "tsc -watch -p ./",
     "package": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",

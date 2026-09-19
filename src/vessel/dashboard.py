@@ -7,6 +7,7 @@ import json
 import secrets
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,6 +17,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from vessel import __version__, devices
+from vessel.orbio import InvalidOrbioCredential, OrbioNetworkError, RealOrbioAdapter, mask_key
 from vessel.service import Blocked, Vessel, digest
 
 MAX_BODY = 128 * 1024
@@ -49,7 +51,15 @@ def approved_origin(value):
 
 
 def create_app(
-    state_dir: Path, *, origin: str, token: str, port=8765, ttl=3600, clock=time.time, start_workers=False
+    state_dir: Path,
+    *,
+    origin: str,
+    token: str,
+    port=8765,
+    ttl=3600,
+    clock=time.time,
+    start_workers=False,
+    orbio_adapter=None,
 ):
     origin = approved_origin(origin)
     if not isinstance(port, int) or not 1024 <= port <= 65535 or not 60 <= ttl <= 28800:
@@ -62,6 +72,8 @@ def create_app(
         enrollment_id = service._enrollment()["id"]
         service._writable()
     app = FastAPI(title="VESSEL owner bridge", docs_url=None, redoc_url=None, openapi_url=None)
+    adapter = orbio_adapter or RealOrbioAdapter(clock=clock)
+    from vessel import extension_gateway
     mutation_lock = threading.Lock()
     worker = {"thread": None, "run": None, "epoch": None, "error": None}
 
@@ -237,6 +249,323 @@ def create_app(
             if not result:
                 return JSONResponse({"error": "Request was not recorded"}, status_code=404)
             return result
+
+    @app.get("/v1/orbio/status")
+    async def get_orbio_status(request: Request):
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            secret = service.store.get("secrets", "orbio_credential")
+            gateway_cfg = service.store.get("control", extension_gateway.CONTROL) or {}
+
+        current_gateway = extension_gateway.status(state_dir)
+        has_key = bool(secret and secret.get("key"))
+        masked = secret.get("masked") if has_key else None
+        version = secret.get("credential_version") if has_key else None
+        verified_at = secret.get("verified_at") if has_key else None
+
+        conn_status = await adapter.connection_status(secret.get("key") if has_key else None)
+
+        gateway_state = "offline"
+        if current_gateway.get("running"):
+            gateway_state = "healthy" if current_gateway.get("status") == "ready" else current_gateway.get("status", "running")
+        elif gateway_cfg.get("paused"):
+            gateway_state = "paused"
+
+        return {
+            "connected": has_key,
+            "masked_key": masked,
+            "credential_version": version,
+            "status": "active" if (has_key and not gateway_cfg.get("paused")) else ("paused" if has_key else "not_configured"),
+            "probe_status": "ok" if has_key else "unconfigured",
+            "verified_at": verified_at,
+            "gateway": {
+                "status": gateway_state,
+                "port": gateway_cfg.get("port", 8091),
+                "base_url": f"http://127.0.0.1:{gateway_cfg.get('port', 8091)}/v1/chat/completions",
+                "models": gateway_cfg.get("models", list(extension_gateway.MODELS)),
+                "active_model": (gateway_cfg.get("models") or [extension_gateway.MODELS[0]])[0],
+                "smart_routing": bool(gateway_cfg.get("smart_routing") or "openrouter/auto" in gateway_cfg.get("models", [])),
+                "running": current_gateway.get("running", False),
+            },
+            "balance": conn_status.get("balance", {
+                "available": False,
+                "amount": None,
+                "currency": "CREDIT",
+                "reason": "Not available without Orbio Remote MCP authorization",
+            }),
+            "usage": {
+                "available": False,
+                "amount": None,
+                "currency": "CREDIT",
+                "reason": "Usage reporting not available in this release",
+            },
+            "mcp": conn_status.get("mcp", {"configured": False, "capabilities": []}),
+            "last_error": None,
+        }
+
+    @app.post("/v1/orbio/credentials")
+    async def set_orbio_credentials(request: Request):
+        if request.headers.get("content-type", "").split(";")[0] != "application/json":
+            return JSONResponse({"error": "JSON request required"}, status_code=415)
+        raw = bytearray()
+        async for part in request.stream():
+            raw.extend(part)
+            if len(raw) > 8192:
+                return JSONResponse({"error": "Payload exceeds 8 KiB"}, status_code=413)
+        try:
+            body = json.loads(raw)
+            if not isinstance(body, dict) or "key" not in body:
+                return JSONResponse({"error": "Orbio API key is required"}, status_code=400)
+            key = body["key"]
+            if not isinstance(key, str) or not 1 <= len(key) <= 8192 or any(ch.isspace() for ch in key):
+                return JSONResponse({"error": "Invalid Orbio API key format"}, status_code=400)
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON request"}, status_code=400)
+
+        try:
+            probe_result = await adapter.validate_credential(key)
+        except InvalidOrbioCredential:
+            return JSONResponse({"error": "Provider rejected credential. Check your Orbio API key."}, status_code=400)
+        except OrbioNetworkError:
+            return JSONResponse({"error": "Could not connect to Orbio gateway. Check network connectivity."}, status_code=502)
+        except Exception:
+            return JSONResponse({"error": "Credential verification failed."}, status_code=500)
+
+        version = uuid.uuid4().hex
+        masked = mask_key(key)
+        verified_at = probe_result.get("verified_at", clock())
+
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                secret_record = {
+                    "provider": "orbio",
+                    "credential_version": version,
+                    "key": key,
+                    "masked": masked,
+                    "verified_at": verified_at,
+                    "created_at": clock(),
+                }
+                service.store.put("secrets", "orbio_credential", secret_record, conn=conn)
+
+                current_cfg = service.store.get("control", extension_gateway.CONTROL, conn=conn) or {
+                    "schema": 1,
+                    "port": 8091,
+                    "models": list(extension_gateway.MODELS),
+                    "validation": "canned_text_probe",
+                    "native_cline": "pending",
+                }
+                current_cfg.update({
+                    "credential_version": version,
+                    "verified_at": verified_at,
+                    "paused": False,
+                })
+                service.store.put("control", extension_gateway.CONTROL, current_cfg, conn=conn)
+
+        try:
+            if extension_gateway.status(state_dir)["running"]:
+                extension_gateway.stop(state_dir)
+            extension_gateway.launch(state_dir, key)
+        except Exception:
+            pass
+
+        adapter.clear_cache()
+        return {
+            "status": "connected",
+            "credential_version": version,
+            "masked_key": masked,
+            "verified_at": verified_at,
+        }
+
+    @app.post("/v1/orbio/replace")
+    async def replace_orbio_credentials(request: Request):
+        return await set_orbio_credentials(request)
+
+    @app.delete("/v1/orbio/credentials")
+    async def delete_orbio_credentials(request: Request):
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                service.store.delete("secrets", "orbio_credential", conn=conn)
+                current_cfg = service.store.get("control", extension_gateway.CONTROL, conn=conn)
+                if current_cfg:
+                    current_cfg["paused"] = True
+                    current_cfg["credential_version"] = uuid.uuid4().hex
+                    service.store.put("control", extension_gateway.CONTROL, current_cfg, conn=conn)
+
+        try:
+            if extension_gateway.status(state_dir)["running"]:
+                extension_gateway.stop(state_dir)
+        except Exception:
+            pass
+
+        adapter.clear_cache()
+        return {
+            "status": "forgotten",
+            "paused": True,
+            "recovery_history_preserved": True,
+        }
+
+    @app.post("/v1/orbio/refresh")
+    async def refresh_orbio_credentials(request: Request):
+        adapter.clear_cache()
+        return await get_orbio_status(request)
+
+    @app.post("/v1/orbio/claim")
+    async def claim_orbio_key(request: Request):
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+
+        name = "vessel-operator-key"
+        if request.headers.get("content-type", "").split(";")[0] == "application/json":
+            try:
+                body = await request.json()
+                if isinstance(body, dict) and body.get("name"):
+                    name = str(body["name"])[:64]
+            except Exception:
+                pass
+
+        claim_res = await adapter.claim_key(name=name)
+        if not claim_res.get("success"):
+            return JSONResponse(
+                {
+                    "status": claim_res.get("status", "mcp_not_configured"),
+                    "message": claim_res.get("message", "Orbio Remote MCP is not configured."),
+                    "url": claim_res.get("url", "https://orbio.so"),
+                },
+                status_code=200,
+            )
+
+        key = claim_res["key"]
+        try:
+            probe_result = await adapter.validate_credential(key)
+        except Exception as exc:
+            return JSONResponse({"error": f"Claimed key failed validation: {exc}"}, status_code=500)
+
+        version = uuid.uuid4().hex
+        masked = mask_key(key)
+        verified_at = probe_result.get("verified_at", clock())
+
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                secret_record = {
+                    "provider": "orbio",
+                    "credential_version": version,
+                    "key": key,
+                    "masked": masked,
+                    "verified_at": verified_at,
+                    "created_at": clock(),
+                }
+                service.store.put("secrets", "orbio_credential", secret_record, conn=conn)
+
+                current_cfg = service.store.get("control", extension_gateway.CONTROL, conn=conn) or {
+                    "schema": 1,
+                    "port": 8091,
+                    "models": list(extension_gateway.MODELS),
+                    "validation": "canned_text_probe",
+                    "native_cline": "pending",
+                }
+                current_cfg.update({
+                    "credential_version": version,
+                    "verified_at": verified_at,
+                    "paused": False,
+                })
+                service.store.put("control", extension_gateway.CONTROL, current_cfg, conn=conn)
+
+        try:
+            if extension_gateway.status(state_dir)["running"]:
+                extension_gateway.stop(state_dir)
+            extension_gateway.launch(state_dir, key)
+        except Exception:
+            pass
+
+        adapter.clear_cache()
+        return {
+            "status": "claimed",
+            "credential_version": version,
+            "masked_key": masked,
+            "verified_at": verified_at,
+            "message": "Orbio API key successfully claimed and saved to encrypted store.",
+        }
+
+    @app.get("/v1/orbio/models")
+    async def get_orbio_models(request: Request):
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            secret = service.store.get("secrets", "orbio_credential")
+            gateway_cfg = service.store.get("control", extension_gateway.CONTROL) or {}
+
+        key = secret.get("key") if secret else None
+        catalog = await adapter.fetch_model_catalog(key)
+        models_cfg = gateway_cfg.get("models") or list(extension_gateway.MODELS)
+        active = models_cfg[0] if models_cfg else "openrouter/auto"
+        smart_routing = bool(gateway_cfg.get("smart_routing") or "openrouter/auto" in models_cfg)
+
+        return {
+            "models": catalog,
+            "active_model": active,
+            "gateway_models": models_cfg,
+            "smart_routing": smart_routing,
+        }
+
+    @app.post("/v1/orbio/routing")
+    async def set_orbio_routing(request: Request):
+        if request.headers.get("content-type", "").split(";")[0] != "application/json":
+            return JSONResponse({"error": "JSON request required"}, status_code=415)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                return JSONResponse({"error": "Invalid request format"}, status_code=400)
+            active_model = str(body.get("active_model", "")).strip()
+            smart_routing = bool(body.get("smart_routing", False))
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        if smart_routing:
+            new_models = ["openrouter/auto"]
+            if active_model and active_model != "openrouter/auto":
+                new_models.append(active_model)
+        else:
+            if not active_model:
+                return JSONResponse({"error": "active_model is required when smart_routing is disabled"}, status_code=400)
+            fallbacks = [str(m).strip() for m in body.get("fallback_models", []) if isinstance(m, str) and m.strip()]
+            new_models = list(dict.fromkeys([active_model] + fallbacks))
+
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                secret = service.store.get("secrets", "orbio_credential", conn=conn)
+                current_cfg = service.store.get("control", extension_gateway.CONTROL, conn=conn) or {
+                    "schema": 1,
+                    "port": 8091,
+                    "validation": "canned_text_probe",
+                    "native_cline": "pending",
+                }
+                current_cfg["models"] = new_models
+                current_cfg["smart_routing"] = smart_routing
+                service.store.put("control", extension_gateway.CONTROL, current_cfg, conn=conn)
+
+        raw_key = secret.get("key") if secret else None
+        try:
+            if extension_gateway.status(state_dir)["running"]:
+                extension_gateway.stop(state_dir)
+            if raw_key and not current_cfg.get("paused"):
+                extension_gateway.launch(state_dir, raw_key)
+        except Exception:
+            pass
+
+        adapter.clear_cache()
+        return {
+            "status": "updated",
+            "active_model": new_models[0],
+            "gateway_models": new_models,
+            "smart_routing": smart_routing,
+        }
 
     @app.post("/v1/actions")
     async def action(request: Request):

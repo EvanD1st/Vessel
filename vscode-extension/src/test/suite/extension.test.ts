@@ -5,6 +5,6 @@ suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
 	test('Extension should be present', () => {
-		assert.ok(vscode.extensions.getExtension('vessel.vessel'));
+		assert.ok(vscode.extensions.getExtension('n3ythrax.vessel-companion'));
 	});
 });

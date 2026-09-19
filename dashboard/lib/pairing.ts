@@ -1,4 +1,4 @@
-import { companion, type Session, type Snapshot } from './vessel';
+import { companion, type Session, type Snapshot, type OperatorIdentityCard } from './vessel';
 
 export type Pairing = {
   enrollmentId: string;
@@ -157,3 +157,31 @@ export function startReconnection<T>(
     timers.clear(timer);
   };
 }
+
+export function importPairingFromIdentity(
+  storage: Pick<Storage, 'setItem' | 'removeItem'>,
+  card: OperatorIdentityCard,
+): Pairing | null {
+  if (
+    !card.enrollmentId ||
+    !card.deviceId ||
+    !card.port ||
+    !card.pairingCredential ||
+    !/^[a-f0-9]{24}$/.test(card.deviceId) ||
+    !/^[A-Za-z0-9_-]{32,128}$/.test(card.pairingCredential) ||
+    !Number.isInteger(card.port) ||
+    card.port < 1024 ||
+    card.port > 65535
+  ) {
+    return null;
+  }
+  const pairing: Pairing = {
+    enrollmentId: card.enrollmentId,
+    deviceId: card.deviceId,
+    port: card.port,
+    credential: card.pairingCredential,
+  };
+  savePairing(storage, pairing);
+  return pairing;
+}
+

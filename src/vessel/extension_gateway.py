@@ -58,15 +58,19 @@ def stop(state, *, timeout=20):
     raise TimeoutError("Gateway stop pending")
 
 
-def launch(state, key, *, timeout=20):
+def launch(state, key=None, *, timeout=20):
     state = safe_directory(Path(state))
-    if not isinstance(key, str) or not key or len(key) > 8192 or any(ch.isspace() for ch in key):
-        raise ValueError("Invalid provider credential")
     service = Vessel(state)
     try:
         config = service._get("control", CONTROL)
+        if key is None:
+            secret = service.store.get("secrets", "orbio_credential")
+            if secret and isinstance(secret.get("key"), str):
+                key = secret["key"]
     finally:
         service.close()
+    if not isinstance(key, str) or not key or len(key) > 8192 or any(ch.isspace() for ch in key):
+        raise ValueError("Invalid provider credential")
     if config["paused"]:
         raise ValueError("Gateway paused")
     current = status(state)
@@ -99,11 +103,25 @@ def serve(state):
 
     state = safe_directory(Path(state))
     key = os.environ.pop(KEY_ENV, "")
+    if not key:
+        init_service = Vessel(state)
+        try:
+            secret = init_service.store.get("secrets", "orbio_credential")
+            if secret and isinstance(secret.get("key"), str):
+                key = secret["key"]
+        finally:
+            init_service.close()
     with lock_for(state).hold(timeout=2):
         service = Vessel(state)
         try:
             config = service._get("control", CONTROL)
-            if config["paused"] or not set(config["models"]) <= set(MODELS):
+            models = config.get("models")
+            if (
+                config.get("paused")
+                or not isinstance(models, (list, tuple))
+                or not models
+                or any(not isinstance(m, str) or not m.strip() or any(ord(c) < 32 for c in m) for m in models)
+            ):
                 raise ValueError("Gateway configuration unavailable")
         finally:
             service.close()
@@ -129,8 +147,10 @@ def serve(state):
             finally:
                 instance.close()
 
+        auto_candidates = tuple(list(dict.fromkeys(config["models"]))[:3])
+        profiles = {"vessel-auto": auto_candidates} if "vessel-auto" not in config["models"] else {}
         app = create_app(routes={"default": UpstreamRoute(ENDPOINT, key, frozenset(config["models"]),
-                          {"vessel-auto": tuple(config["models"])}, config["credential_version"])},
+                          profiles, config["credential_version"])},
                          authorize=authorize, audit=audit)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
             if os.name == "nt":

@@ -234,3 +234,35 @@ def test_retry_after_installer_committed_before_journal_update(setup, monkeypatc
     monkeypatch.setattr(api.onboarding, "apply", original)
     assert call(setup, "apply", transaction=plan["id"], review=plan["review"], credential_version=version)["status"] == "configured"
     assert call(setup, "status")["runs"] == []
+
+
+def test_extension_api_orbio_credential_lifecycle(setup):
+    plan, _ = configure(setup)
+
+    # Initially no key
+    status = call(setup, "orbio-status")
+    assert status["has_key"] is False
+    assert status["masked_key"] is None
+
+    # Migrate key from extension SecretStorage
+    migrated = call(setup, "orbio-migrate-key", key="sk-orbio-extension-key-1234")
+    assert migrated["migrated"] is True
+    assert migrated["masked_key"] == "sk-orbio-••••1234"
+
+    # Check status
+    status2 = call(setup, "orbio-status")
+    assert status2["has_key"] is True
+    assert status2["masked_key"] == "sk-orbio-••••1234"
+
+    # Get key
+    key_doc = call(setup, "orbio-get-key")
+    assert key_doc["has_key"] is True
+    assert key_doc["key"] == "sk-orbio-extension-key-1234"
+
+    # Forget key
+    forgotten = call(setup, "orbio-forget-key")
+    assert forgotten["status"] == "forgotten"
+    assert forgotten["paused"] is True
+
+    status3 = call(setup, "orbio-status")
+    assert status3["has_key"] is False

@@ -26,7 +26,7 @@ export default async function Home() {
       {user.mustChangePassword ? (
         <AccountPanel user={user} />
       ) : (
-        <Workspace signedIn accountId={user.userId} />
+        <Workspace signedIn accountId={user.userId} user={user} />
       )}
     </AccountBoundary>
   );

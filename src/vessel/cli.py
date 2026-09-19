@@ -217,6 +217,15 @@ def build_parser():
     p.add_argument("--model", required=True, action="append")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", default=8091, type=int)
+    p = sub.add_parser("orbio", help="Inspect and manage first-class Orbio credentials and gateway status")
+    p.add_argument("action", choices=["status", "set-key", "replace-key", "forget-key", "claim-key", "models"])
+    p.add_argument("--key", help="Orbio API key (sk-orbio-...)")
+    p.add_argument("--name", default="vessel-operator-key", help="Key name for claim-key")
+    p = sub.add_parser("identity", help="Manage portable Operator Identity Cards for cross-system migration")
+    p.add_argument("action", choices=["inspect", "import", "export"])
+    p.add_argument("--pass-file", type=Path, help="Path to vessel-identity.json pass file")
+    p.add_argument("--token", help="Base64url-encoded identity pass token (vessel-pass:...)")
+    p.add_argument("--workspace", type=Path, help="Workspace directory")
     return parser
 
 
@@ -235,6 +244,7 @@ def main(argv=None):
             "connection",
             "doctor",
             "startup",
+            "identity",
         }:
             if args.workspace:
                 from vessel.onboarding import local_path
@@ -274,12 +284,17 @@ def main(argv=None):
             profile = load_profile(args.state)
             service = Vessel(args.state)
             observed = service.status(profile["workspace"])
+            orbio_secret = service.store.get("secrets", "orbio_credential")
             result = {
                 "profile": profile,
                 "configuration": adapters.inspect("cline", Path(profile["workspace"]), service.store.dir),
                 "companion": desktop.status(args.state),
                 "capture": observed["capture"],
                 "observed_sessions": len(observed["sessions"]),
+                "orbio": {
+                    "configured": bool(orbio_secret and orbio_secret.get("key")),
+                    "masked_key": orbio_secret.get("masked") if orbio_secret else None,
+                },
                 "notice": "Configuration alone does not verify native capture. Require a real Cline probe.",
             }
             if os.name == "nt":
@@ -536,6 +551,139 @@ def main(argv=None):
                     app = create_app(routes={"default": route}, authorize=authorize, audit=audit)
                     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
                     return 0
+                case "orbio":
+                    import asyncio
+
+                    from vessel import extension_gateway
+                    from vessel.orbio import RealOrbioAdapter, mask_key
+
+                    adapter = RealOrbioAdapter()
+                    if args.action == "status":
+                        secret = service.store.get("secrets", "orbio_credential")
+                        has_key = bool(secret and secret.get("key"))
+                        masked = secret.get("masked") if has_key else None
+                        version = secret.get("credential_version") if has_key else None
+                        verified_at = secret.get("verified_at") if has_key else None
+                        conn_status = asyncio.run(
+                            adapter.connection_status(secret.get("key") if has_key else None)
+                        )
+                        gateway_cfg = service.store.get("control", extension_gateway.CONTROL) or {}
+                        gw_status = extension_gateway.status(args.state)
+                        result = {
+                            "connected": has_key,
+                            "masked_key": masked,
+                            "credential_version": version,
+                            "verified_at": verified_at,
+                            "probe_status": "ok" if has_key else "unconfigured",
+                            "gateway": {
+                                "status": gw_status.get("status", "offline"),
+                                "port": gateway_cfg.get("port", 8091),
+                                "running": gw_status.get("running", False),
+                                "models": gateway_cfg.get("models", list(extension_gateway.MODELS)),
+                            },
+                            "balance": conn_status.get(
+                                "balance",
+                                {"available": False, "amount": None, "currency": "CREDIT"},
+                            ),
+                            "mcp": conn_status.get("mcp", {"configured": False, "capabilities": []}),
+                        }
+                    elif args.action in {"set-key", "replace-key"}:
+                        raw_key = args.key
+                        if not raw_key:
+                            import getpass
+
+                            raw_key = getpass.getpass("Enter Orbio API Key: ").strip()
+                        if not raw_key:
+                            raise ValueError("Orbio API key is required")
+                        asyncio.run(adapter.validate_credential(raw_key))
+                        now = int(time.time())
+                        secret = service.store.get("secrets", "orbio_credential")
+                        version = (
+                            f"v{int(secret.get('credential_version', 'v0')[1:]) + 1}"
+                            if secret
+                            else "v1"
+                        )
+                        service.store.put(
+                            "secrets",
+                            "orbio_credential",
+                            {
+                                "key": raw_key,
+                                "masked": mask_key(raw_key),
+                                "credential_version": version,
+                                "verified_at": now,
+                            },
+                        )
+                        ctrl = service.store.get("control", extension_gateway.CONTROL) or {}
+                        ctrl["paused"] = False
+                        service.store.put("control", extension_gateway.CONTROL, ctrl)
+                        result = {
+                            "status": "active",
+                            "credential_version": version,
+                            "masked_key": mask_key(raw_key),
+                            "verified_at": now,
+                        }
+                    elif args.action == "forget-key":
+                        service.store.delete("secrets", "orbio_credential")
+                        ctrl = service.store.get("control", extension_gateway.CONTROL) or {}
+                        ctrl["paused"] = True
+                        service.store.put("control", extension_gateway.CONTROL, ctrl)
+                        result = {
+                            "status": "removed",
+                            "paused": True,
+                            "recovery_history_preserved": True,
+                        }
+                    elif args.action == "claim-key":
+                        claim_res = asyncio.run(adapter.claim_key(args.name))
+                        if not claim_res.get("success"):
+                            result = claim_res
+                        else:
+                            raw_key = claim_res["key"]
+                            asyncio.run(adapter.validate_credential(raw_key))
+                            now = int(time.time())
+                            version = "v1"
+                            service.store.put(
+                                "secrets",
+                                "orbio_credential",
+                                {
+                                    "key": raw_key,
+                                    "masked": mask_key(raw_key),
+                                    "credential_version": version,
+                                    "verified_at": now,
+                                },
+                            )
+                            ctrl = service.store.get("control", extension_gateway.CONTROL) or {}
+                            ctrl["paused"] = False
+                            service.store.put("control", extension_gateway.CONTROL, ctrl)
+                            result = {
+                                "status": "claimed",
+                                "credential_version": version,
+                                "masked_key": mask_key(raw_key),
+                                "verified_at": now,
+                            }
+                    elif args.action == "models":
+                        secret = service.store.get("secrets", "orbio_credential")
+                        raw_key = secret.get("key") if secret else None
+                        models_list = asyncio.run(adapter.fetch_model_catalog(raw_key))
+                        ctrl = service.store.get("control", extension_gateway.CONTROL) or {}
+                        result = {
+                            "active_model": (ctrl.get("models") or [extension_gateway.MODELS[0]])[0],
+                            "gateway_models": ctrl.get("models") or list(extension_gateway.MODELS),
+                            "models": models_list[:10],
+                            "total_models": len(models_list),
+                        }
+                case "identity":
+                    from vessel.identity import (
+                        export_identity_pass,
+                        import_identity_pass,
+                        inspect_identity_pass,
+                    )
+
+                    if args.action == "inspect":
+                        result = inspect_identity_pass(pass_file=args.pass_file, token=args.token)
+                    elif args.action == "import":
+                        result = import_identity_pass(service.store, pass_file=args.pass_file, token=args.token)
+                    elif args.action == "export":
+                        result = export_identity_pass(service.store, pass_file=args.pass_file)
                 case _:
                     raise ValueError("Unknown command")
         output(result)

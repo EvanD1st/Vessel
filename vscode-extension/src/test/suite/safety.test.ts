@@ -78,7 +78,7 @@ suite('Safety boundaries', () => {
         await assert.rejects(runProcess(process.execPath, ['-e', 'setInterval(()=>{},100)'], { env, timeout: 100 }), /timed out/);
     });
     test('Every contributed command registers in the real extension host', async () => {
-        const extension = vscode.extensions.getExtension('vessel.vessel')!; await extension.activate();
+        const extension = vscode.extensions.getExtension('n3ythrax.vessel-companion')!; await extension.activate();
         const commands = await vscode.commands.getCommands(true);
         for (const command of extension.packageJSON.contributes.commands) assert.ok(commands.includes(command.command), command.command);
     });

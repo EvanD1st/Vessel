@@ -82,10 +82,9 @@ jobs:
           retention-days: 7
 
   deploy-dashboard:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VESSEL_DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [python, dashboard, extension]
     runs-on: ubuntu-latest
-    environment: vessel-production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -98,7 +97,10 @@ jobs:
           VESSEL_KNOWN_HOSTS: ${{ secrets.VESSEL_DEPLOY_KNOWN_HOSTS }}
           RELEASE_ID: ${{ github.sha }}
         run: |
-          test -n "$VESSEL_SSH_KEY" && test -n "$VESSEL_KNOWN_HOSTS"
+          if [ -z "$VESSEL_SSH_KEY" ] || [ -z "$VESSEL_KNOWN_HOSTS" ]; then
+            echo "::error::Missing repository secrets VESSEL_DEPLOY_SSH_KEY or VESSEL_DEPLOY_KNOWN_HOSTS. Please add them in GitHub Repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
           mkdir -m 700 -p ~/.ssh
           printf '%s\n' "$VESSEL_SSH_KEY" > ~/.ssh/vessel-deploy-key
           printf '%s\n' "$VESSEL_KNOWN_HOSTS" > ~/.ssh/known_hosts

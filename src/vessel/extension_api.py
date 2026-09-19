@@ -384,7 +384,7 @@ def dispatch(request):
         return desktop.stop(state)
     if action == "gateway-launch":
         before = gateway.status(state)
-        result = gateway.launch(state, request["key"])
+        result = gateway.launch(state, request.get("key"))
         if request.get("transaction") and not before["running"]:
             path = transaction_path(storage, request["transaction"])
             record = json.loads(_regular_file(path, 131072))
@@ -393,6 +393,70 @@ def dispatch(request):
         return result
     if action == "gateway-stop":
         return gateway.stop(state)
+    if action == "orbio-status":
+        service = Vessel(state)
+        try:
+            secret = service.store.get("secrets", "orbio_credential")
+            return {
+                "has_key": bool(secret and secret.get("key")),
+                "masked_key": secret.get("masked") if secret else None,
+                "credential_version": secret.get("credential_version") if secret else None,
+                "verified_at": secret.get("verified_at") if secret else None,
+            }
+        finally:
+            service.close()
+    if action == "orbio-get-key":
+        service = Vessel(state)
+        try:
+            secret = service.store.get("secrets", "orbio_credential")
+            if not secret or not secret.get("key"):
+                return {"has_key": False, "key": None}
+            return {"has_key": True, "key": secret["key"], "credential_version": secret.get("credential_version")}
+        finally:
+            service.close()
+    if action == "orbio-migrate-key":
+        key = request["key"]
+        if not isinstance(key, str) or not key or len(key) > 8192 or any(ch.isspace() for ch in key):
+            raise RequestError("invalid_request")
+        service = Vessel(state)
+        try:
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                existing = service.store.get("secrets", "orbio_credential", conn=conn)
+                if not existing or not existing.get("key"):
+                    from vessel.orbio import mask_key
+                    version = request.get("credential_version") or uuid.uuid4().hex
+                    secret_record = {
+                        "provider": "orbio",
+                        "credential_version": version,
+                        "key": key,
+                        "masked": mask_key(key),
+                        "verified_at": request.get("verified_at") or time.time(),
+                        "created_at": time.time(),
+                    }
+                    service.store.put("secrets", "orbio_credential", secret_record, conn=conn)
+            verified = service.store.get("secrets", "orbio_credential")
+            if not verified or verified.get("key") != key:
+                raise RequestError("migration_failed")
+            return {"migrated": True, "credential_version": verified["credential_version"], "masked_key": verified["masked"]}
+        finally:
+            service.close()
+    if action == "orbio-forget-key":
+        service = Vessel(state)
+        try:
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                service.store.delete("secrets", "orbio_credential", conn=conn)
+                current_cfg = service.store.get("control", gateway.CONTROL, conn=conn)
+                if current_cfg:
+                    current_cfg["paused"] = True
+                    current_cfg["credential_version"] = uuid.uuid4().hex
+                    service.store.put("control", gateway.CONTROL, current_cfg, conn=conn)
+            if gateway.status(state)["running"]:
+                gateway.stop(state)
+            return {"status": "forgotten", "paused": True}
+        finally:
+            service.close()
     if action == "action-result":
         return bridge_request(state, "GET", "/v1/requests/" + identifier(request["request_id"]))
     if action == "owner-action":

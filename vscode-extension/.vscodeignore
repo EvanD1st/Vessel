@@ -3,6 +3,7 @@
 !README.md
 !dist/extension.js
 !resources/icon.svg
+!resources/icon.png
 !scripts/bootstrap.py
 !runtime/manifest.json
 !runtime/requirements.txt

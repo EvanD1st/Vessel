@@ -95,12 +95,32 @@ export class Controller implements vscode.Disposable {
             revision: snapshot.policy_revision, epoch: snapshot.lease?.execution_epoch ?? null, ...extra });
     }
     async key(state: SetupState): Promise<string> {
-        const value = state.credentialVersion && await this.context.secrets.get(secretId(state.workspace, state.credentialVersion));
-        if (!value) { throw new LocalError('key_missing', 'No Orbio key is stored for this project. Use Replace Orbio Key.'); }
-        return value;
+        const cli = await this.client();
+        const canonical = await cli.request<{ has_key: boolean; key?: string; credential_version?: string }>('orbio-get-key', { workspace: state.workspace });
+        if (canonical.has_key && canonical.key) {
+            return canonical.key;
+        }
+        const legacy = state.credentialVersion && await this.context.secrets.get(secretId(state.workspace, state.credentialVersion));
+        if (legacy) {
+            try {
+                const migration = await cli.request<{ migrated: boolean; credential_version: string }>('orbio-migrate-key', {
+                    workspace: state.workspace,
+                    key: legacy,
+                    credential_version: state.credentialVersion,
+                    verified_at: state.verifiedAt,
+                });
+                if (migration.migrated && state.credentialVersion) {
+                    await this.context.secrets.delete(secretId(state.workspace, state.credentialVersion)).then(undefined, () => undefined);
+                    return legacy;
+                }
+            } catch {
+                return legacy;
+            }
+        }
+        throw new LocalError('key_missing', 'No Orbio key is stored for this project. Use Replace Orbio Key.');
     }
     async collectKey(state: SetupState, cli: PythonCli): Promise<boolean> {
-        const value = await vscode.window.showInputBox({ title: 'Connect Orbio', prompt: 'Enter the key issued by Orbio. It will be saved only in VS Code SecretStorage after verification.', password: true, ignoreFocusOut: true,
+        const value = await vscode.window.showInputBox({ title: 'Connect Orbio', prompt: 'Enter the key issued by Orbio. It will be encrypted and saved in local VESSEL storage.', password: true, ignoreFocusOut: true,
             validateInput: input => !input || input.length > 8192 || /\s/.test(input) ? 'Paste only the Orbio key, without spaces or a Bearer prefix.' : undefined });
         if (!value) { return false; }
         const approved = await vscode.window.showWarningMessage('Verify this key at api.orbio.so with two small READY-only inference requests, then store it securely? Provider charges may apply. No project content is sent.', { modal: true }, 'Verify and save');
@@ -108,7 +128,10 @@ export class Controller implements vscode.Disposable {
         const models = ['openai/gpt-4.1-mini', 'openai/gpt-4o-mini'];
         const result = await cli.request<{ verified_at: number }>('validate-provider', { key: value, models }, 60000);
         const version = id();
-        await this.context.secrets.store(secretId(state.workspace, version), value);
+        await cli.request('orbio-migrate-key', { workspace: state.workspace, key: value, credential_version: version, verified_at: result.verified_at });
+        if (state.credentialVersion) {
+            await this.context.secrets.delete(secretId(state.workspace, state.credentialVersion)).then(undefined, () => undefined);
+        }
         state.previousCredentialVersion = state.credentialVersion;
         state.credentialVersion = version; state.verifiedAt = result.verified_at; state.steps.provider = 'passed';
         await this.wizard.save(state); return true;
@@ -141,7 +164,8 @@ export class Controller implements vscode.Disposable {
         if (!config) { return; }
         const originChoice = await vscode.window.showQuickPick([
             ...(found.profile?.origin ? [{ label: `Keep ${found.profile.origin}`, value: found.profile.origin }] : []),
-            { label: 'Hosted VESSEL dashboard', detail: 'https://vessel-cont.duckdns.org', value: 'https://vessel-cont.duckdns.org' },
+            { label: 'Hosted VESSEL dashboard', detail: 'https://vessel-dashboard.cloud-ip.cc', value: 'https://vessel-dashboard.cloud-ip.cc' },
+            { label: 'Alternative hosted dashboard', detail: 'https://vessel-cont.duckdns.org', value: 'https://vessel-cont.duckdns.org' },
             { label: 'Local development dashboard', detail: 'http://localhost:3000', value: 'http://localhost:3000' },
             { label: 'Another HTTPS origin', value: 'custom' }
         ], { title: 'Choose the exact dashboard origin allowed to reach this local companion', ignoreFocusOut: true });
@@ -150,8 +174,12 @@ export class Controller implements vscode.Disposable {
             ? await vscode.window.showInputBox({ title: 'Dashboard HTTPS origin', placeHolder: 'https://dashboard.example.com', ignoreFocusOut: true })
             : originChoice.value;
         if (!origin) { return; }
-        if (!state.credentialVersion || !await this.context.secrets.get(secretId(workspace, state.credentialVersion))) {
-            if (!await this.collectKey(state, cli)) { return; }
+        const orbioStatus = await cli.request<{ has_key: boolean }>('orbio-status', { workspace });
+        if (!orbioStatus.has_key) {
+            const hasLegacy = state.credentialVersion && await this.context.secrets.get(secretId(workspace, state.credentialVersion));
+            if (!hasLegacy) {
+                if (!await this.collectKey(state, cli)) { return; }
+            }
         }
         const catalog = await cli.request<{ models: string[] }>('models');
         const primary = await vscode.window.showQuickPick(catalog.models.map(model => ({ label: model, description: 'Text verified for your key · tools previously verified · native Cline pending' })), { title: 'Primary model', ignoreFocusOut: true });
@@ -320,11 +348,13 @@ export class Controller implements vscode.Disposable {
         const workspace = this.selected(), state = this.wizard.load(workspace);
         if (await vscode.window.showWarningMessage('Forget this project’s Orbio key and pause new inference? Checkpoints are preserved.', { modal: true }, 'Forget key') !== 'Forget key') { return; }
         if (state.configured) { await this.setGateway(true, { credential_version: id() }); }
-        if (state.credentialVersion) { await this.context.secrets.delete(secretId(workspace, state.credentialVersion)); }
-        if (state.previousCredentialVersion) { await this.context.secrets.delete(secretId(workspace, state.previousCredentialVersion)); }
+        if (state.credentialVersion) { await this.context.secrets.delete(secretId(workspace, state.credentialVersion)).then(undefined, () => undefined); }
+        if (state.previousCredentialVersion) { await this.context.secrets.delete(secretId(workspace, state.previousCredentialVersion)).then(undefined, () => undefined); }
+        const cli = await this.client();
+        await cli.request('orbio-forget-key', { workspace }).catch(() => undefined);
         state.credentialVersion = undefined; state.previousCredentialVersion = undefined; state.steps.provider = 'pending'; state.paused = true;
         await this.wizard.save(state);
-        if (state.configured) { await (await this.client()).request('gateway-stop', { workspace }); }
+        if (state.configured) { await cli.request('gateway-stop', { workspace }).catch(() => undefined); }
         void vscode.window.showInformationMessage('Key forgotten and new gateway admissions paused. Recovery data is preserved.');
     }
     async configureCline(): Promise<void> {

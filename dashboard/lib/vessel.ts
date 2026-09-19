@@ -188,3 +188,259 @@ export const short = (value: string | undefined) =>
       ? `${value.slice(0, 12)}…${value.slice(-6)}`
       : value
     : '—';
+
+export type OrbioStatus = {
+  connected: boolean;
+  masked_key: string | null;
+  credential_version: string | null;
+  status: 'active' | 'paused' | 'not_configured' | 'invalid';
+  probe_status: string;
+  verified_at: number | null;
+  gateway: {
+    status: string;
+    port: number;
+    base_url: string;
+    models: string[];
+    running: boolean;
+    active_model?: string;
+    smart_routing?: boolean;
+  };
+  balance: {
+    available: boolean;
+    amount: number | null;
+    currency: string;
+    reason?: string;
+  };
+  usage: {
+    available: boolean;
+    amount: number | null;
+    currency: string;
+    reason?: string;
+  };
+  mcp: {
+    configured: boolean;
+    capabilities: string[];
+  };
+  last_error: string | null;
+};
+
+export type OrbioModel = {
+  id: string;
+  name: string;
+  context_length: number;
+  pricing: { prompt: string; completion: string; [key: string]: unknown };
+  recommended?: boolean;
+  description?: string;
+};
+
+export async function getOrbioStatus(session: Session): Promise<OrbioStatus> {
+  return companion<OrbioStatus>(session, '/v1/orbio/status');
+}
+
+export async function connectOrbioKey(
+  session: Session,
+  key: string,
+): Promise<{
+  status: string;
+  credential_version: string;
+  masked_key: string;
+  verified_at: number;
+}> {
+  return companion(session, '/v1/orbio/credentials', { key }, 'POST');
+}
+
+export async function replaceOrbioKey(
+  session: Session,
+  key: string,
+): Promise<{
+  status: string;
+  credential_version: string;
+  masked_key: string;
+  verified_at: number;
+}> {
+  return companion(session, '/v1/orbio/replace', { key }, 'POST');
+}
+
+export async function forgetOrbioKey(session: Session): Promise<{
+  status: string;
+  paused: boolean;
+  recovery_history_preserved: boolean;
+}> {
+  return companion(session, '/v1/orbio/credentials', undefined, 'DELETE');
+}
+
+export async function refreshOrbioStatus(
+  session: Session,
+): Promise<OrbioStatus> {
+  return companion<OrbioStatus>(session, '/v1/orbio/refresh', {}, 'POST');
+}
+
+export async function claimOrbioKey(
+  session: Session,
+  name?: string,
+): Promise<{
+  status: string;
+  credential_version?: string;
+  masked_key?: string;
+  verified_at?: number;
+  message?: string;
+  url?: string;
+}> {
+  return companion(session, '/v1/orbio/claim', { name }, 'POST');
+}
+
+export async function getOrbioModels(session: Session): Promise<{
+  models: OrbioModel[];
+  active_model: string;
+  gateway_models: string[];
+  smart_routing: boolean;
+}> {
+  return companion(session, '/v1/orbio/models');
+}
+
+export async function updateOrbioRouting(
+  session: Session,
+  params: {
+    activeModel: string;
+    smartRouting?: boolean;
+    fallbackModels?: string[];
+  },
+): Promise<{
+  status: string;
+  active_model: string;
+  gateway_models: string[];
+  smart_routing: boolean;
+}> {
+  return companion(
+    session,
+    '/v1/orbio/routing',
+    {
+      active_model: params.activeModel,
+      smart_routing: params.smartRouting ?? false,
+      fallback_models: params.fallbackModels,
+    },
+    'POST',
+  );
+}
+
+export type OperatorIdentityCard = {
+  format: 'vessel-operator-identity';
+  version: 1;
+  operator: {
+    id: string;
+    name: string;
+    email: string;
+    role?: string;
+  };
+  origin: string;
+  enrollmentId?: string;
+  deviceId?: string;
+  port?: number;
+  pairingCredential?: string;
+  issuedAt: number;
+  fingerprint: string;
+};
+
+export function createIdentityCard(params: {
+  operator: { id: string; name: string; email: string; role?: string };
+  origin: string;
+  pairing?: {
+    enrollmentId: string;
+    deviceId: string;
+    port: number;
+    credential: string;
+  } | null;
+  issuedAt?: number;
+}): OperatorIdentityCard {
+  const issuedAt = params.issuedAt ?? Date.now();
+  const rawData = `${params.operator.id}:${params.operator.email}:${params.origin}:${params.pairing?.enrollmentId || ''}:${params.pairing?.deviceId || ''}:${issuedAt}`;
+  let hash = 0;
+  for (let i = 0; i < rawData.length; i++) {
+    hash = ((hash << 5) - hash) + rawData.charCodeAt(i);
+    hash |= 0;
+  }
+  const hex = Math.abs(hash).toString(16).padStart(8, '0');
+  const shortId = params.operator.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6) || 'root';
+  const fingerprint = `vsl-id-${hex}-${shortId}`;
+
+  return {
+    format: 'vessel-operator-identity',
+    version: 1,
+    operator: {
+      id: params.operator.id,
+      name: params.operator.name,
+      email: params.operator.email,
+      role: params.operator.role,
+    },
+    origin: params.origin,
+    enrollmentId: params.pairing?.enrollmentId,
+    deviceId: params.pairing?.deviceId,
+    port: params.pairing?.port,
+    pairingCredential: params.pairing?.credential,
+    issuedAt,
+    fingerprint,
+  };
+}
+
+export function serializeIdentityPass(card: OperatorIdentityCard): string {
+  const jsonStr = JSON.stringify(card);
+  if (typeof Buffer !== 'undefined') {
+    return `vessel-pass:${Buffer.from(jsonStr, 'utf8').toString('base64url')}`;
+  }
+  const bytes = new TextEncoder().encode(jsonStr);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `vessel-pass:${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+}
+
+export function parseIdentityPass(input: string): OperatorIdentityCard {
+  let jsonString = input.trim();
+  if (jsonString.startsWith('vessel-pass:')) {
+    const encoded = jsonString.slice('vessel-pass:'.length).trim();
+    if (typeof Buffer !== 'undefined') {
+      jsonString = Buffer.from(encoded, 'base64url').toString('utf8');
+    } else {
+      const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      jsonString = new TextDecoder().decode(bytes);
+    }
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    throw new Error('Invalid Identity Card data: not valid JSON or pass code.');
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid Identity Card format.');
+  }
+
+  const card = parsed as Partial<OperatorIdentityCard>;
+  if (card.format !== 'vessel-operator-identity' || card.version !== 1) {
+    throw new Error('Unsupported Identity Card format or version.');
+  }
+
+  if (!card.operator || !card.operator.id || !card.operator.email) {
+    throw new Error('Identity Card missing required operator credentials.');
+  }
+
+  if (!card.origin || typeof card.origin !== 'string') {
+    throw new Error('Identity Card missing origin configuration.');
+  }
+
+  if (card.port !== undefined && (typeof card.port !== 'number' || card.port < 1024 || card.port > 65535)) {
+    throw new Error('Identity Card contains an invalid companion port.');
+  }
+
+  return card as OperatorIdentityCard;
+}
+
+

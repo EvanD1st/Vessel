@@ -3,7 +3,7 @@ const path = require('node:path');
 const python = process.env.VESSEL_TEST_PYTHON || (process.platform === 'win32' ? 'py' : 'python3');
 const prefix = python === 'py' ? ['-3.11'] : [];
 const script = `import hashlib,json,zipfile
-with zipfile.ZipFile('vessel-0.2.0.vsix') as z:
+with zipfile.ZipFile('vessel-companion-0.2.0.vsix') as z:
  names=z.namelist()
  for required in ['extension/package.json','extension/readme.md','extension/resources/icon.svg','extension/scripts/bootstrap.py','extension/runtime/manifest.json','extension/dist/extension.js']:
   assert required in [name.lower() for name in names], required

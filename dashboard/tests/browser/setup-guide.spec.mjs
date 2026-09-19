@@ -6,7 +6,7 @@ test('all eight steps are readable and installation is truthfully disabled', asy
   await expect(steps).toHaveCount(8);
   for (const step of await steps.all()) await expect(step).toBeVisible();
   await expect(page.getByText('This is an educational preview.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open in VS Code — preview only' })).toBeDisabled();
+  await expect(page.getByRole('link', { name: /DOWNLOAD VESSEL VSIX/i })).toBeVisible();
   await expect(page.locator('a[href^="vscode:"]')).toHaveCount(0);
 });
 
