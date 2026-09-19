@@ -78,7 +78,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: vessel-extension-vsix
-          path: vscode-extension/vessel-0.2.0.vsix
+          path: vscode-extension/vessel-companion-*.vsix
           retention-days: 7
 
   deploy-dashboard:

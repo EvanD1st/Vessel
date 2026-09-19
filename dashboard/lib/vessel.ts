@@ -323,6 +323,60 @@ export async function updateOrbioRouting(
   );
 }
 
+export type OrbioUsageAnalytics = {
+  has_key: boolean;
+  usage: {
+    available: boolean;
+    usage?: number;
+    total_credits?: number;
+    remaining_credits?: number;
+    percent_used?: number;
+    rate_limits?: {
+      requests_per_minute?: number;
+      tokens_per_minute?: number;
+    };
+    limit?: number | null;
+    label?: string | null;
+    reason?: string;
+  };
+  wallet: OrbioWalletInfo;
+};
+
+export type OrbioWalletInfo = {
+  wallet_address: string | null;
+  holdings: number;
+  tier: number;
+  tier_name: string;
+  tier_perks: {
+    multiplier: number;
+    routing_priority: string;
+    description: string;
+  };
+};
+
+export async function getOrbioUsage(
+  session: Session,
+): Promise<OrbioUsageAnalytics> {
+  return companion<OrbioUsageAnalytics>(session, '/v1/orbio/usage');
+}
+
+export async function linkOrbioWallet(
+  session: Session,
+  walletAddress?: string,
+  action: 'connect' | 'disconnect' = 'connect',
+): Promise<{
+  status: string;
+  wallet: OrbioWalletInfo;
+}> {
+  return companion(
+    session,
+    '/v1/orbio/wallet',
+    { wallet_address: walletAddress, action },
+    'POST',
+  );
+}
+
+
 export type OperatorIdentityCard = {
   format: 'vessel-operator-identity';
   version: 1;

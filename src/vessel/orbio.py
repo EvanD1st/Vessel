@@ -15,8 +15,51 @@ import httpx
 
 ORBIO_GATEWAY_ENDPOINT = "https://api.orbio.so/api/v1/chat/completions"
 OPENROUTER_MODELS_ENDPOINT = "https://openrouter.ai/api/v1/models"
+OPENROUTER_AUTH_KEY_ENDPOINT = "https://openrouter.ai/api/v1/auth/key"
+OPENROUTER_CREDITS_ENDPOINT = "https://openrouter.ai/api/v1/credits"
+SOLANA_RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
 DEFAULT_PROBE_MODEL = "openai/gpt-4.1-mini"
 CACHE_TTL_SECONDS = 60.0
+
+
+def calculate_orbio_tier(holdings: float) -> dict[str, Any]:
+    """Calculate operator tier and inference entitlements based on $ORBIO token holdings."""
+    if holdings >= 250_000:
+        return {
+            "tier": "sovereign",
+            "tier_name": "Sovereign",
+            "label": "Tier 3 // Sovereign",
+            "min_holdings": 250_000,
+            "quota_multiplier": 5.0,
+            "features": ["Uncapped Concurrency", "Priority Auto-Routing", "Frontier Reasoning"],
+        }
+    elif holdings >= 50_000:
+        return {
+            "tier": "builder",
+            "tier_name": "Builder",
+            "label": "Tier 2 // Builder",
+            "min_holdings": 50_000,
+            "quota_multiplier": 2.5,
+            "features": ["High Concurrency", "Smart Dynamic Routing"],
+        }
+    elif holdings >= 10_000:
+        return {
+            "tier": "explorer",
+            "tier_name": "Explorer",
+            "label": "Tier 1 // Explorer",
+            "min_holdings": 10_000,
+            "quota_multiplier": 1.0,
+            "features": ["Standard Routing", "Frontier Models Access"],
+        }
+    else:
+        return {
+            "tier": "community",
+            "tier_name": "Community",
+            "label": "Community Tier",
+            "min_holdings": 0,
+            "quota_multiplier": 0.5,
+            "features": ["Basic Inference"],
+        }
 
 CURATED_MODELS = [
     {
@@ -131,6 +174,7 @@ class OrbioCapabilities:
     key_claim: bool = False
     top_up: bool = False
     key_management: bool = False
+    usage_analytics: bool = True
 
 
 class OrbioAdapter(Protocol):
@@ -142,6 +186,10 @@ class OrbioAdapter(Protocol):
     async def claim_key(self, name: str = "vessel-operator-key") -> dict[str, Any]: ...
 
     async def fetch_model_catalog(self, api_key: str | None = None) -> list[dict[str, Any]]: ...
+
+    async def fetch_usage_analytics(self, api_key: str | None = None) -> dict[str, Any]: ...
+
+    async def fetch_wallet_holdings(self, wallet_address: str) -> dict[str, Any]: ...
 
     async def get_balance(self, account_reference: str | None = None) -> dict[str, Any]: ...
 
@@ -344,10 +392,12 @@ class RealOrbioAdapter:
         gateway_client: OrbioGatewayClient | None = None,
         mcp_client: OrbioRemoteMCPClient | None = None,
         clock: Any = time.time,
+        transport: httpx.AsyncBaseTransport | None = None,
     ):
-        self.gateway = gateway_client or OrbioGatewayClient()
-        self.mcp = mcp_client or OrbioRemoteMCPClient()
+        self.gateway = gateway_client or OrbioGatewayClient(transport=transport)
+        self.mcp = mcp_client or OrbioRemoteMCPClient(transport=transport)
         self.clock = clock
+        self.transport = transport
         self._cache: dict[str, tuple[float, Any]] = {}
 
     @property
@@ -470,13 +520,150 @@ class RealOrbioAdapter:
         self.clear_cache()
         return await self.mcp.revoke_key(key_id)
 
-    async def get_usage(self, account_reference: str | None = None) -> dict[str, Any]:
-        return {
-            "available": False,
-            "amount": None,
-            "currency": "CREDIT",
-            "reason": "Usage reporting not available in this release",
+    async def fetch_usage_analytics(self, api_key: str | None = None) -> dict[str, Any]:
+        """Fetch live OpenRouter credit balance and consumption analytics for an Orbio key."""
+        if not api_key:
+            return {
+                "available": False,
+                "reason": "No Orbio API key configured",
+                "usage": 0.0,
+                "total_credits": None,
+                "remaining_credits": None,
+                "percent_used": 0.0,
+                "limit": None,
+                "rate_limit": None,
+                "label": None,
+            }
+
+        cached = self._get_cached(f"usage_{mask_key(api_key)}")
+        if cached is not None:
+            return cached
+
+        usage_val = 0.0
+        total_credits_val = None
+        limit_val = None
+        rate_limit_val = None
+        label_val = None
+        is_free = False
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://vessel-dashboard.cloud-ip.cc",
+                "X-Title": "VESSEL Agent Continuity",
+            }
+            async with httpx.AsyncClient(timeout=10.0, transport=self.transport) as client:
+                resp_key = await client.get(OPENROUTER_AUTH_KEY_ENDPOINT, headers=headers)
+                if resp_key.status_code == 200:
+                    k_data = resp_key.json().get("data", {})
+                    usage_val = float(k_data.get("usage", 0.0) or 0.0)
+                    limit_val = k_data.get("limit")
+                    is_free = bool(k_data.get("is_free_tier", False))
+                    rate_limit_val = k_data.get("rate_limit")
+                    label_val = k_data.get("label")
+
+                resp_cred = await client.get(OPENROUTER_CREDITS_ENDPOINT, headers=headers)
+                if resp_cred.status_code == 200:
+                    c_data = resp_cred.json().get("data", {})
+                    if "total_credits" in c_data:
+                        total_credits_val = float(c_data["total_credits"] or 0.0)
+        except Exception:
+            pass
+
+        remaining = round(max(0.0, total_credits_val - usage_val), 4) if total_credits_val is not None else None
+        pct = round(min(100.0, (usage_val / total_credits_val) * 100.0), 1) if (total_credits_val and total_credits_val > 0) else 0.0
+
+        analytics = {
+            "available": True,
+            "usage": round(usage_val, 4),
+            "total_credits": round(total_credits_val, 4) if total_credits_val is not None else None,
+            "remaining_credits": remaining,
+            "percent_used": pct,
+            "limit": limit_val,
+            "rate_limit": rate_limit_val,
+            "is_free_tier": is_free,
+            "label": label_val,
+            "checked_at": self.clock(),
         }
+        self._set_cached(f"usage_{mask_key(api_key)}", analytics)
+        return analytics
+
+    async def fetch_wallet_holdings(self, wallet_address: str) -> dict[str, Any]:
+        """Verify Solana wallet address and calculate $ORBIO holding tier."""
+        import re
+
+        if not wallet_address or not re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", wallet_address):
+            return {
+                "valid": False,
+                "error": "Invalid Solana public address format. Must be 32-44 base58 characters.",
+                "wallet_address": wallet_address,
+                "holdings": 0.0,
+                **calculate_orbio_tier(0.0),
+            }
+
+        cached = self._get_cached(f"sol_wallet_{wallet_address}")
+        if cached is not None:
+            return cached
+
+        holdings_val = 0.0
+        sol_val = 0.0
+        try:
+            async with httpx.AsyncClient(timeout=8.0, transport=self.transport) as client:
+                # Query native SOL balance
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getBalance",
+                    "params": [wallet_address],
+                }
+                resp = await client.post(SOLANA_RPC_ENDPOINT, json=payload)
+                if resp.status_code == 200:
+                    res = resp.json().get("result", {})
+                    sol_val = round(float(res.get("value", 0)) / 1e9, 4)
+
+                # Query token accounts for $ORBIO holdings
+                token_payload = {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        wallet_address,
+                        {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+                        {"encoding": "jsonParsed"},
+                    ],
+                }
+                t_resp = await client.post(SOLANA_RPC_ENDPOINT, json=token_payload)
+                if t_resp.status_code == 200:
+                    accounts = t_resp.json().get("result", {}).get("value", [])
+                    for item in accounts:
+                        info = item.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                        token_amount = info.get("tokenAmount", {})
+                        ui_amount = float(token_amount.get("uiAmount", 0) or 0)
+                        if ui_amount > holdings_val:
+                            holdings_val = ui_amount
+        except Exception:
+            pass
+
+        tier_info = calculate_orbio_tier(holdings_val)
+        result = {
+            "valid": True,
+            "wallet_address": wallet_address,
+            "masked_wallet": f"{wallet_address[:4]}...{wallet_address[-4:]}",
+            "holdings": holdings_val,
+            "sol_balance": sol_val,
+            "tier": tier_info["tier"],
+            "tier_name": tier_info["tier_name"],
+            "label": tier_info["label"],
+            "min_holdings": tier_info["min_holdings"],
+            "quota_multiplier": tier_info["quota_multiplier"],
+            "features": tier_info["features"],
+            "checked_at": self.clock(),
+        }
+        self._set_cached(f"sol_wallet_{wallet_address}", result)
+        return result
+
+    async def get_usage(self, account_reference: str | None = None) -> dict[str, Any]:
+        return await self.fetch_usage_analytics(account_reference)
 
     async def connection_status(self, credential: str | None = None) -> dict[str, Any]:
         cached = self._get_cached(f"conn_{mask_key(credential) if credential else 'none'}")

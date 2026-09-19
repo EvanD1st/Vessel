@@ -2,7 +2,7 @@
   "name": "vessel-companion",
   "displayName": "VESSEL - Agent Continuity",
   "description": "Protect your Cline tasks from interrupted sessions, provider failures and lost progress.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
@@ -44,6 +44,30 @@
           "default": true,
           "scope": "window",
           "description": "Stop local VESSEL processes when this VS Code window closes. Native Cline work is not stopped or attested."
+        },
+        "vessel.dashboardUrl": {
+          "type": "string",
+          "default": "https://vessel-dashboard.cloud-ip.cc",
+          "scope": "window",
+          "description": "Hosted or local VESSEL dashboard URL."
+        },
+        "vessel.companionPort": {
+          "type": "integer",
+          "default": 8765,
+          "scope": "window",
+          "description": "Port for the local VESSEL companion process."
+        },
+        "vessel.gatewayPort": {
+          "type": "integer",
+          "default": 8091,
+          "scope": "window",
+          "description": "Port for the local VESSEL inference gateway."
+        },
+        "vessel.smartRouting": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Enable dynamic auto-routing and tier-based model selection."
         }
       }
     },
@@ -131,6 +155,10 @@
       {
         "command": "vessel.openDiagnostic",
         "title": "VESSEL: Open Diagnostic Report"
+      },
+      {
+        "command": "vessel.openDashboard",
+        "title": "VESSEL: Open Dashboard"
       }
     ],
     "viewsContainers": {
@@ -157,7 +185,8 @@
     "compile": "tsc -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "lint": "oxlint src --deny-warnings",
-    "package:vsix": "vsce package --no-dependencies --out vessel-companion-0.2.0.vsix",
+    "package:vsix": "vsce package --no-dependencies --out vessel-companion-0.3.0.vsix",
+    "publish:marketplace": "vsce publish",
     "test:package": "node scripts/verify-package.cjs",
     "watch": "tsc -watch -p ./",
     "package": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",

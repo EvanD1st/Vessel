@@ -162,9 +162,11 @@ export class Controller implements vscode.Disposable {
             config = (await vscode.window.showOpenDialog({ title: 'Select the settings file opened by Cline MCP Configure', canSelectMany: false, filters: { JSON: ['json'] } }))?.[0]?.fsPath;
         }
         if (!config) { return; }
+        const vesselConfig = vscode.workspace.getConfiguration('vessel');
+        const configuredOrigin = vesselConfig.get<string>('dashboardUrl', 'https://vessel-dashboard.cloud-ip.cc');
         const originChoice = await vscode.window.showQuickPick([
             ...(found.profile?.origin ? [{ label: `Keep ${found.profile.origin}`, value: found.profile.origin }] : []),
-            { label: 'Hosted VESSEL dashboard', detail: 'https://vessel-dashboard.cloud-ip.cc', value: 'https://vessel-dashboard.cloud-ip.cc' },
+            { label: 'Configured VESSEL dashboard', detail: configuredOrigin, value: configuredOrigin },
             { label: 'Alternative hosted dashboard', detail: 'https://vessel-cont.duckdns.org', value: 'https://vessel-cont.duckdns.org' },
             { label: 'Local development dashboard', detail: 'http://localhost:3000', value: 'http://localhost:3000' },
             { label: 'Another HTTPS origin', value: 'custom' }
@@ -186,9 +188,10 @@ export class Controller implements vscode.Disposable {
         if (!primary) { return; }
         const fallback = await vscode.window.showQuickPick(catalog.models.filter(model => model !== primary.label), { title: 'Fallback model (only before response commitment)', ignoreFocusOut: true });
         if (!fallback) { return; }
-        state.models = [primary.label, fallback]; state.steps.models = 'passed';
-        const companionPort = await this.port('Companion port', found.profile?.port ?? 8765); if (!companionPort) { return; }
-        const gatewayPort = await this.port('Inference gateway port', 8091); if (!gatewayPort) { return; }
+        const configuredCompanionPort = vesselConfig.get<number>('companionPort', 8765);
+        const configuredGatewayPort = vesselConfig.get<number>('gatewayPort', 8091);
+        const companionPort = await this.port('Companion port', found.profile?.port ?? configuredCompanionPort); if (!companionPort) { return; }
+        const gatewayPort = await this.port('Inference gateway port', configuredGatewayPort); if (!gatewayPort) { return; }
         const plan = await cli.request<Plan>('plan', { workspace, mission, mcp_config: config, models: state.models,
             port: companionPort, gateway_port: gatewayPort, origin });
         state.transaction = plan.id; state.review = plan.review;
@@ -435,7 +438,11 @@ export function activate(context: vscode.ExtensionContext): void {
         removeWorkspace: () => app.remove(), openDiagnostic: () => app.diagnostic(), bindSession: () => app.bind(),
         confirmRecovery: () => app.confirmRecovery(), manageTasks: () => app.task(), configureCline: () => app.configureCline(),
         rollbackSetup: () => app.rollback(), openLogs: async () => app.openLogs(),
-        openGuide: async () => { await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionUri.fsPath, 'README.md'))); }
+        openGuide: async () => { await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionUri.fsPath, 'README.md'))); },
+        openDashboard: async () => {
+            const url = vscode.workspace.getConfiguration('vessel').get<string>('dashboardUrl', 'https://vessel-dashboard.cloud-ip.cc');
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+        }
     };
     for (const [name, callback] of Object.entries(commands)) { context.subscriptions.push(vscode.commands.registerCommand('vessel.' + name, () => app.execute(callback))); }
     context.subscriptions.push(vscode.extensions.onDidChange(() => { void app.refresh(false); }));

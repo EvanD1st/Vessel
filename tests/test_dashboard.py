@@ -360,3 +360,39 @@ def test_orbio_claim_and_models_and_routing(bridge):
     assert route_res2.json()["active_model"] == "anthropic/claude-sonnet-4.5"
     assert route_res2.json()["smart_routing"] is False
 
+
+def test_orbio_usage_and_wallet(bridge):
+    # 1. Get usage without key
+    u_res = bridge.get("/v1/orbio/usage")
+    assert u_res.status_code == 200
+    data = u_res.json()
+    assert data["has_key"] is False
+    assert data["usage"]["available"] is False
+
+    # 2. Link invalid wallet fails
+    w_bad = bridge.post("/v1/orbio/wallet", json={"address": "short"})
+    assert w_bad.status_code == 400
+    assert "Invalid Solana public address" in w_bad.json()["error"]
+
+    # 3. Link valid Solana wallet
+    w_ok = bridge.post("/v1/orbio/wallet", json={"address": "8F4bA3hJ9eKf1LmNpQrStUvWxYz23456789123456789"})
+    assert w_ok.status_code == 200
+    assert w_ok.json()["status"] == "linked"
+    assert w_ok.json()["wallet"]["valid"] is True
+    assert w_ok.json()["wallet"]["tier"] in ("community", "builder", "sovereign", "explorer")
+
+    # 4. Usage reflects linked wallet
+    u_res2 = bridge.get("/v1/orbio/usage")
+    assert u_res2.status_code == 200
+    assert u_res2.json()["wallet"]["valid"] is True
+
+    # 5. Disconnect wallet
+    w_disc = bridge.post("/v1/orbio/wallet", json={"action": "disconnect"})
+    assert w_disc.status_code == 200
+    assert w_disc.json()["status"] == "disconnected"
+
+    # 6. Usage no longer includes wallet
+    u_res3 = bridge.get("/v1/orbio/usage")
+    assert u_res3.json()["wallet"] is None
+
+

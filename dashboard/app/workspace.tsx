@@ -73,8 +73,11 @@ import {
   type Task,
   type OrbioStatus,
   type OrbioModel,
+  type OrbioUsageAnalytics,
   type OperatorIdentityCard,
   getOrbioStatus,
+  getOrbioUsage,
+  linkOrbioWallet,
   connectOrbioKey,
   replaceOrbioKey,
   forgetOrbioKey,
@@ -158,6 +161,11 @@ export default function Workspace({
     [forgetModalOpen, setForgetModalOpen] = useState(false),
     [forgettingOrbio, setForgettingOrbio] = useState(false),
     [refreshingOrbio, setRefreshingOrbio] = useState(false);
+  const [orbioUsage, setOrbioUsage] = useState<OrbioUsageAnalytics | null>(null),
+    [orbioUsageLoading, setOrbioUsageLoading] = useState(false),
+    [walletModalOpen, setWalletModalOpen] = useState(false),
+    [walletInput, setWalletInput] = useState(''),
+    [walletSaving, setWalletSaving] = useState(false);
   const [modelsCatalog, setModelsCatalog] = useState<OrbioModel[]>([]),
     [activeGatewayModel, setActiveGatewayModel] = useState('openrouter/auto'),
     [isSmartRouting, setIsSmartRouting] = useState(false),
@@ -191,10 +199,27 @@ export default function Workspace({
       setModelsLoading(false);
     }
   }, []);
+  const loadOrbioUsage = useCallback(async (targetSession?: Session | null) => {
+    const activeSession = targetSession ?? sessionRef.current;
+    if (!activeSession) {
+      setOrbioUsage(null);
+      return;
+    }
+    setOrbioUsageLoading(true);
+    try {
+      const data = await getOrbioUsage(activeSession);
+      setOrbioUsage(data);
+    } catch {
+      // Fallback gracefully
+    } finally {
+      setOrbioUsageLoading(false);
+    }
+  }, []);
   const loadOrbio = useCallback(async (targetSession?: Session | null) => {
     const activeSession = targetSession ?? sessionRef.current;
     if (!activeSession) {
       setOrbio(null);
+      setOrbioUsage(null);
       return;
     }
     setOrbioLoading(true);
@@ -203,6 +228,7 @@ export default function Workspace({
       setOrbio(status);
       if (status.connected) {
         void loadOrbioModels(activeSession);
+        void loadOrbioUsage(activeSession);
       }
     } catch (err) {
       setOrbioError(
@@ -211,7 +237,7 @@ export default function Workspace({
     } finally {
       setOrbioLoading(false);
     }
-  }, [loadOrbioModels]);
+  }, [loadOrbioModels, loadOrbioUsage]);
   const acceptConnection = useCallback((connected: Connected) => {
     sessionRef.current = connected.session;
     pairingRef.current = connected.pairing;
@@ -568,13 +594,39 @@ export default function Workspace({
     try {
       const status = await refreshOrbioStatus(current);
       setOrbio(status);
-      setMessage('Orbio gateway status refreshed.');
+      void loadOrbioUsage(current);
+      setMessage('Orbio gateway status and usage analytics refreshed.');
     } catch (err) {
       setOrbioError(
         err instanceof Error ? err.message : 'Failed to refresh Orbio status.',
       );
     } finally {
       setRefreshingOrbio(false);
+    }
+  }
+  async function handleLinkWallet(address?: string, action: 'connect' | 'disconnect' = 'connect') {
+    const current = sessionRef.current;
+    if (!current) return;
+    setWalletSaving(true);
+    setOrbioError('');
+    try {
+      const res = await linkOrbioWallet(current, address, action);
+      if (res.wallet) {
+        setOrbioUsage((prev) => prev ? { ...prev, wallet: res.wallet } : null);
+        setMessage(
+          action === 'disconnect'
+            ? 'Solana wallet unlinked. Tier reset to Community.'
+            : `Solana wallet linked! Tier: ${res.wallet.tier_name} (${res.wallet.holdings.toLocaleString()} $ORBIO)`
+        );
+      }
+      setWalletModalOpen(false);
+      setWalletInput('');
+    } catch (err) {
+      setOrbioError(
+        err instanceof Error ? err.message : 'Failed to update wallet link.',
+      );
+    } finally {
+      setWalletSaving(false);
     }
   }
   async function handleClaimOrbio() {
@@ -2139,6 +2191,167 @@ export default function Workspace({
                     </div>
                   )}
 
+                  {/* Quota & Token Gating Analytics */}
+                  <div className="orbio-analytics-grid">
+                    {/* Usage & Quota Meter Card */}
+                    <div className="orbio-analytics-card">
+                      <div className="quota-meter-header">
+                        <div>
+                          <span className="card-tag">QUOTA &amp; COMPUTE USAGE</span>
+                          <h4 style={{ margin: '4px 0 0', fontSize: 18, fontWeight: 700 }}>
+                            Real-Time Spend &amp; Credits
+                          </h4>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={orbioUsageLoading}
+                          onClick={() => sessionRef.current && void loadOrbioUsage(sessionRef.current)}
+                          title="Refresh usage analytics"
+                        >
+                          <RefreshCw className={orbioUsageLoading ? 'animate-spin' : ''} size={15} />
+                        </Button>
+                      </div>
+
+                      <div className="quota-stats-row">
+                        <div className="quota-stat-main">
+                          <span className="quota-sub">Remaining Credits</span>
+                          <span className="quota-number" style={{ color: '#00f0b5' }}>
+                            ${orbioUsage?.usage?.remaining_credits !== undefined
+                              ? orbioUsage.usage.remaining_credits.toFixed(4)
+                              : '0.0000'}
+                          </span>
+                        </div>
+                        <div className="quota-stat-main" style={{ textAlign: 'right' }}>
+                          <span className="quota-sub">Period Usage</span>
+                          <span className="quota-number" style={{ fontSize: 20 }}>
+                            ${orbioUsage?.usage?.usage !== undefined
+                              ? orbioUsage.usage.usage.toFixed(4)
+                              : '0.0000'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Quota Progress Bar */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 6, color: 'var(--muted)' }}>
+                          <span>Quota Utilization</span>
+                          <span>
+                            {orbioUsage?.usage?.percent_used !== undefined
+                              ? `${orbioUsage.usage.percent_used.toFixed(1)}%`
+                              : '0.0%'}
+                            {orbioUsage?.usage?.total_credits ? ` of $${orbioUsage.usage.total_credits.toFixed(2)}` : ''}
+                          </span>
+                        </div>
+                        <div className="quota-progress-track">
+                          <div
+                            className={`quota-progress-fill ${(orbioUsage?.usage?.percent_used ?? 0) > 85 ? 'warning' : ''}`}
+                            style={{
+                              width: `${Math.min(Math.max(orbioUsage?.usage?.percent_used ?? 0, 2), 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Rate limits & Key label */}
+                      <div className="rate-limits-row">
+                        <span className="rate-limit-badge" title="Requests per minute rate limit">
+                          <Zap size={13} style={{ color: '#00d2ff' }} />
+                          {orbioUsage?.usage?.rate_limits?.requests_per_minute ?? 200} req/min
+                        </span>
+                        <span className="rate-limit-badge" title="Tokens per minute rate limit">
+                          <Cpu size={13} style={{ color: '#a855f7' }} />
+                          {orbioUsage?.usage?.rate_limits?.tokens_per_minute?.toLocaleString() ?? '40,000'} tok/min
+                        </span>
+                        {orbioUsage?.usage?.label && (
+                          <span className="rate-limit-badge" title="Key label">
+                            <Key size={13} />
+                            {orbioUsage.usage.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* $ORBIO Token-Gated Tier Card */}
+                    <div className="orbio-analytics-card">
+                      <div className="quota-meter-header">
+                        <div>
+                          <span className="card-tag">$ORBIO TOKEN HOLDINGS</span>
+                          <h4 style={{ margin: '4px 0 0', fontSize: 18, fontWeight: 700 }}>
+                            Wallet-Gated Access Tier
+                          </h4>
+                        </div>
+                        <span className={`tier-badge tier-${(orbioUsage?.wallet?.tier_name ?? 'community').toLowerCase()}`}>
+                          <Sparkles size={12} />
+                          {`${orbioUsage?.wallet?.tier_name ?? 'Community'} // TIER ${orbioUsage?.wallet?.tier ?? 0}`}
+                        </span>
+                      </div>
+
+                      <div className="quota-stats-row">
+                        <div className="quota-stat-main">
+                          <span className="quota-sub">Verified Holdings</span>
+                          <span className="quota-number" style={{ color: '#a855f7' }}>
+                            {orbioUsage?.wallet?.holdings ? orbioUsage.wallet.holdings.toLocaleString() : '0'}{' '}
+                            <span style={{ fontSize: 16, color: 'var(--primary)' }}>$ORBIO</span>
+                          </span>
+                        </div>
+                        <div className="quota-stat-main" style={{ textAlign: 'right' }}>
+                          <span className="quota-sub">Compute Multiplier</span>
+                          <span className="quota-number" style={{ fontSize: 20, color: '#00d2ff' }}>
+                            {orbioUsage?.wallet?.tier_perks?.multiplier ?? 0.5}x
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 12.5, color: 'var(--muted)', background: 'var(--secondary)', padding: '8px 12px', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                          <strong style={{ color: 'var(--foreground)' }}>Routing:</strong>
+                          <span>{orbioUsage?.wallet?.tier_perks?.routing_priority ?? 'Standard'}</span>
+                        </div>
+                        <div>{orbioUsage?.wallet?.tier_perks?.description ?? 'Base inference routing'}</div>
+                      </div>
+
+                      {/* Linked Wallet Address */}
+                      <div className="wallet-badge-row">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                          <Wallet size={15} style={{ color: '#00d2ff', flexShrink: 0 }} />
+                          {orbioUsage?.wallet?.wallet_address ? (
+                            <span title={orbioUsage.wallet.wallet_address} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {orbioUsage.wallet.wallet_address.slice(0, 6)}...{orbioUsage.wallet.wallet_address.slice(-6)}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>No Solana wallet linked</span>
+                          )}
+                        </div>
+                        {orbioUsage?.wallet?.wallet_address ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            style={{ height: 26, fontSize: 11, padding: '0 8px' }}
+                            onClick={() => void handleLinkWallet(undefined, 'disconnect')}
+                            title="Unlink Solana wallet"
+                          >
+                            <Unplug size={12} style={{ marginRight: 4 }} />
+                            Unlink
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            style={{ height: 26, fontSize: 11, padding: '0 8px' }}
+                            onClick={() => {
+                              setWalletInput('');
+                              setWalletModalOpen(true);
+                            }}
+                          >
+                            <Link2 size={12} style={{ marginRight: 4 }} />
+                            Link Solana Wallet
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="orbio-connected-grid">
                     <div className="card-panel">
                       <div className="card-panel-header">
@@ -2693,6 +2906,82 @@ export default function Workspace({
               {forgettingOrbio ? 'Forgetting…' : 'Forget Key'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={walletModalOpen}
+        onOpenChange={(open) => {
+          if (!walletSaving) {
+            setWalletModalOpen(open);
+            if (!open) {
+              setWalletInput('');
+              setOrbioError('');
+            }
+          }
+        }}
+      >
+        <DialogContent className="owner-dialog">
+          <DialogHeader>
+            <DialogTitle>Link Solana Public Wallet</DialogTitle>
+            <DialogDescription>
+              Link your public Solana wallet address (Base58) to verify your $ORBIO holdings and unlock tier perks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="security-guarantee-box" style={{ margin: '8px 0' }}>
+            <ShieldCheck className="guarantee-icon" size={20} />
+            <div className="guarantee-text">
+              <strong>Zero-Knowledge Wallet Security</strong>
+              <p style={{ fontSize: 12, margin: 0 }}>
+                Only your public Solana address is requested and stored for balance lookups. VESSEL will NEVER ask for your private key, seed phrase, or wallet signature.
+              </p>
+            </div>
+          </div>
+          <form
+            className="owner-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleLinkWallet(walletInput.trim(), 'connect');
+            }}
+          >
+            <div className="form-field">
+              <label htmlFor="solana-wallet-input">Solana Public Address</label>
+              <Input
+                id="solana-wallet-input"
+                autoComplete="off"
+                value={walletInput}
+                onChange={(e) => setWalletInput(e.target.value)}
+                required
+                spellCheck={false}
+                placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+              />
+              <small>
+                32–44 character base58 Solana public address. Validated locally before checking on-chain holdings.
+              </small>
+            </div>
+            {orbioError && (
+              <div role="alert" className="notice error">
+                <TriangleAlert size={16} />
+                <span>{orbioError}</span>
+              </div>
+            )}
+            <div className="button-row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setWalletModalOpen(false)}
+                disabled={walletSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={walletSaving || !walletInput.trim()}
+                className="primary-action"
+              >
+                {walletSaving ? 'Verifying & Linking…' : 'Link Public Address'}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
       <Dialog open={claimNoticeModalOpen} onOpenChange={setClaimNoticeModalOpen}>

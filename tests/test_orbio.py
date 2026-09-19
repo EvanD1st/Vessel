@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -224,4 +226,92 @@ async def test_fetch_model_catalog_fallback():
     assert "deepseek/deepseek-r1" in model_ids
     auto_model = next(m for m in catalog if m["id"] == "openrouter/auto")
     assert auto_model["recommended"] is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_usage_analytics_unconfigured():
+    adapter = RealOrbioAdapter()
+    analytics = await adapter.fetch_usage_analytics(None)
+    assert analytics["available"] is False
+    assert analytics["usage"] == 0.0
+    assert analytics["total_credits"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_usage_analytics_mocked():
+    def handler(request: httpx.Request):
+        if "auth/key" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "label": "Test Key",
+                        "usage": 2.50,
+                        "limit": 10.0,
+                        "is_free_tier": False,
+                        "rate_limit": {"requests": 200, "interval": "10s"},
+                    }
+                },
+            )
+        if "credits" in str(request.url):
+            return httpx.Response(200, json={"data": {"total_credits": 15.0, "total_usage": 2.50}})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    adapter = RealOrbioAdapter(transport=transport)
+    analytics = await adapter.fetch_usage_analytics("sk-or-v1-test-key-12345678")
+    assert analytics["available"] is True
+    assert analytics["usage"] == 2.5
+    assert analytics["total_credits"] == 15.0
+    assert analytics["remaining_credits"] == 12.5
+    assert analytics["percent_used"] == 16.7
+    assert analytics["rate_limit"]["requests"] == 200
+
+
+@pytest.mark.asyncio
+async def test_fetch_wallet_holdings():
+    adapter = RealOrbioAdapter()
+    # Invalid address fails gracefully
+    res_inv = await adapter.fetch_wallet_holdings("invalid-short")
+    assert res_inv["valid"] is False
+    assert res_inv["tier"] == "community"
+
+    # Valid address with mocked RPC returning 75,000 $ORBIO -> Builder tier
+    def handler(request: httpx.Request):
+        body = json.loads(request.content)
+        if body.get("method") == "getBalance":
+            return httpx.Response(200, json={"result": {"value": 1500000000}})
+        if body.get("method") == "getTokenAccountsByOwner":
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "value": [
+                            {
+                                "account": {
+                                    "data": {
+                                        "parsed": {
+                                            "info": {
+                                                "tokenAmount": {"uiAmount": 75000.0}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(200, json={"result": {}})
+
+    transport = httpx.MockTransport(handler)
+    adapter = RealOrbioAdapter(transport=transport)
+    # Standard 44-char base58 Solana address
+    res = await adapter.fetch_wallet_holdings("8F4bA3hJ9eKf1LmNpQrStUvWxYz23456789123456789")
+    assert res["valid"] is True
+    assert res["holdings"] == 75000.0
+    assert res["tier"] == "builder"
+    assert res["tier_name"] == "Builder"
+    assert res["quota_multiplier"] == 2.5
+
 

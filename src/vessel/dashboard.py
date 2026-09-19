@@ -567,6 +567,77 @@ def create_app(
             "smart_routing": smart_routing,
         }
 
+    @app.get("/v1/orbio/usage")
+    async def get_orbio_usage(request: Request):
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            secret = service.store.get("secrets", "orbio_credential")
+            wallet_rec = service.store.get("secrets", "orbio_wallet")
+
+        key = secret.get("key") if secret else None
+        usage_data = await adapter.fetch_usage_analytics(key)
+
+        wallet_data = None
+        if wallet_rec and wallet_rec.get("address"):
+            wallet_data = await adapter.fetch_wallet_holdings(wallet_rec["address"])
+
+        return {
+            "usage": usage_data,
+            "wallet": wallet_data,
+            "has_key": bool(key),
+            "checked_at": clock(),
+        }
+
+    @app.post("/v1/orbio/wallet")
+    async def set_orbio_wallet(request: Request):
+        if request.headers.get("content-type", "").split(";")[0] != "application/json":
+            return JSONResponse({"error": "JSON request required"}, status_code=415)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                return JSONResponse({"error": "Invalid request format"}, status_code=400)
+            action = body.get("action")
+            address = str(body.get("address", "")).strip()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        with VesselSession(state_dir, clock=clock) as service:
+            check_enrollment(service)
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                if action == "disconnect" or not address:
+                    service.store.delete("secrets", "orbio_wallet", conn=conn)
+                    adapter.clear_cache()
+                    return {
+                        "status": "disconnected",
+                        "message": "Solana wallet unlinked successfully.",
+                    }
+
+                import re
+                if not re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", address):
+                    return JSONResponse(
+                        {"error": "Invalid Solana public address. Must be 32-44 base58 characters."},
+                        status_code=400,
+                    )
+
+                service.store.put(
+                    "secrets",
+                    "orbio_wallet",
+                    {
+                        "address": address,
+                        "linked_at": clock(),
+                    },
+                    conn=conn,
+                )
+
+        adapter.clear_cache()
+        wallet_info = await adapter.fetch_wallet_holdings(address)
+        return {
+            "status": "linked",
+            "wallet": wallet_info,
+            "message": f"Solana wallet linked. Tier: {wallet_info.get('tier_name')}",
+        }
+
     @app.post("/v1/actions")
     async def action(request: Request):
         if request.headers.get("content-type", "").split(";")[0] != "application/json":
