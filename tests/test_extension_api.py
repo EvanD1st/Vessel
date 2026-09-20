@@ -266,3 +266,17 @@ def test_extension_api_orbio_credential_lifecycle(setup):
 
     status3 = call(setup, "orbio-status")
     assert status3["has_key"] is False
+
+
+def test_extension_api_orbio_status_unenrolled_workspace(tmp_path):
+    storage = tmp_path / "storage"
+    unenrolled = tmp_path / "unenrolled_project"
+    unenrolled.mkdir()
+    result = api.dispatch({
+        "schema": 1,
+        "action": "orbio-status",
+        "storage": str(storage),
+        "workspace": str(unenrolled),
+    })
+    assert result["has_key"] is False
+    assert result["masked_key"] is None

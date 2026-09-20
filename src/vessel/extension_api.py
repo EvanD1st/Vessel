@@ -364,6 +364,60 @@ def dispatch(request):
         return rollback(request, storage)
     if action == "transaction":
         return json.loads(_regular_file(transaction_path(storage, request["transaction"]), 131072))
+    if action == "orbio-status":
+        workspace = safe_directory(onboarding.local_path(request["workspace"]))
+        reg_state = registry.lookup(canonical(workspace))
+        if not reg_state or not (safe_directory(reg_state) / "vessel.sqlite3").exists():
+            return {
+                "has_key": False,
+                "masked_key": None,
+                "credential_version": None,
+                "verified_at": None,
+            }
+        state = safe_directory(reg_state)
+        service = Vessel(state)
+        try:
+            secret = service.store.get("secrets", "orbio_credential")
+            return {
+                "has_key": bool(secret and secret.get("key")),
+                "masked_key": secret.get("masked") if secret else None,
+                "credential_version": secret.get("credential_version") if secret else None,
+                "verified_at": secret.get("verified_at") if secret else None,
+            }
+        finally:
+            service.close()
+    if action == "orbio-migrate-key":
+        key = request["key"]
+        if not isinstance(key, str) or not key or len(key) > 8192 or any(ch.isspace() for ch in key):
+            raise RequestError("invalid_request")
+        workspace = safe_directory(onboarding.local_path(request["workspace"]))
+        reg_state = registry.lookup(canonical(workspace))
+        if not reg_state or not (safe_directory(reg_state) / "vessel.sqlite3").exists():
+            return {"migrated": False, "credential_version": request.get("credential_version")}
+        state = safe_directory(reg_state)
+        service = Vessel(state)
+        try:
+            with service.store.transaction() as conn:
+                service._writable(conn)
+                existing = service.store.get("secrets", "orbio_credential", conn=conn)
+                if not existing or not existing.get("key"):
+                    from vessel.orbio import mask_key
+                    version = request.get("credential_version") or uuid.uuid4().hex
+                    secret_record = {
+                        "provider": "orbio",
+                        "credential_version": version,
+                        "key": key,
+                        "masked": mask_key(key),
+                        "verified_at": request.get("verified_at") or time.time(),
+                        "created_at": time.time(),
+                    }
+                    service.store.put("secrets", "orbio_credential", secret_record, conn=conn)
+            verified = service.store.get("secrets", "orbio_credential")
+            if not verified or verified.get("key") != key:
+                raise RequestError("migration_failed")
+            return {"migrated": True, "credential_version": verified["credential_version"], "masked_key": verified["masked"]}
+        finally:
+            service.close()
     workspace, state = state_for(request["workspace"])
     if request.get("transaction"):
         record = json.loads(_regular_file(transaction_path(storage, request["transaction"]), 131072))
@@ -393,18 +447,6 @@ def dispatch(request):
         return result
     if action == "gateway-stop":
         return gateway.stop(state)
-    if action == "orbio-status":
-        service = Vessel(state)
-        try:
-            secret = service.store.get("secrets", "orbio_credential")
-            return {
-                "has_key": bool(secret and secret.get("key")),
-                "masked_key": secret.get("masked") if secret else None,
-                "credential_version": secret.get("credential_version") if secret else None,
-                "verified_at": secret.get("verified_at") if secret else None,
-            }
-        finally:
-            service.close()
     if action == "orbio-get-key":
         service = Vessel(state)
         try:
@@ -412,33 +454,6 @@ def dispatch(request):
             if not secret or not secret.get("key"):
                 return {"has_key": False, "key": None}
             return {"has_key": True, "key": secret["key"], "credential_version": secret.get("credential_version")}
-        finally:
-            service.close()
-    if action == "orbio-migrate-key":
-        key = request["key"]
-        if not isinstance(key, str) or not key or len(key) > 8192 or any(ch.isspace() for ch in key):
-            raise RequestError("invalid_request")
-        service = Vessel(state)
-        try:
-            with service.store.transaction() as conn:
-                service._writable(conn)
-                existing = service.store.get("secrets", "orbio_credential", conn=conn)
-                if not existing or not existing.get("key"):
-                    from vessel.orbio import mask_key
-                    version = request.get("credential_version") or uuid.uuid4().hex
-                    secret_record = {
-                        "provider": "orbio",
-                        "credential_version": version,
-                        "key": key,
-                        "masked": mask_key(key),
-                        "verified_at": request.get("verified_at") or time.time(),
-                        "created_at": time.time(),
-                    }
-                    service.store.put("secrets", "orbio_credential", secret_record, conn=conn)
-            verified = service.store.get("secrets", "orbio_credential")
-            if not verified or verified.get("key") != key:
-                raise RequestError("migration_failed")
-            return {"migrated": True, "credential_version": verified["credential_version"], "masked_key": verified["masked"]}
         finally:
             service.close()
     if action == "orbio-forget-key":

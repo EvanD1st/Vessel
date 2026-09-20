@@ -128,8 +128,9 @@ export class Controller implements vscode.Disposable {
         const models = ['openai/gpt-4.1-mini', 'openai/gpt-4o-mini'];
         const result = await cli.request<{ verified_at: number }>('validate-provider', { key: value, models }, 60000);
         const version = id();
-        await cli.request('orbio-migrate-key', { workspace: state.workspace, key: value, credential_version: version, verified_at: result.verified_at });
-        if (state.credentialVersion) {
+        await this.context.secrets.store(secretId(state.workspace, version), value);
+        await cli.request('orbio-migrate-key', { workspace: state.workspace, key: value, credential_version: version, verified_at: result.verified_at }).catch(() => undefined);
+        if (state.credentialVersion && state.credentialVersion !== version) {
             await this.context.secrets.delete(secretId(state.workspace, state.credentialVersion)).then(undefined, () => undefined);
         }
         state.previousCredentialVersion = state.credentialVersion;
@@ -188,7 +189,7 @@ export class Controller implements vscode.Disposable {
             ? await vscode.window.showInputBox({ title: 'Dashboard HTTPS origin', placeHolder: 'https://dashboard.example.com', ignoreFocusOut: true })
             : originChoice.value;
         if (!origin) { return; }
-        const orbioStatus = await cli.request<{ has_key: boolean }>('orbio-status', { workspace });
+        const orbioStatus = await cli.request<{ has_key: boolean }>('orbio-status', { workspace }).catch(() => ({ has_key: false }));
         if (!orbioStatus.has_key) {
             const hasLegacy = state.credentialVersion && await this.context.secrets.get(secretId(workspace, state.credentialVersion));
             if (!hasLegacy) {
