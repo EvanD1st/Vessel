@@ -263,13 +263,39 @@ def create_app(
         version = secret.get("credential_version") if has_key else None
         verified_at = secret.get("verified_at") if has_key else None
 
-        conn_status = await adapter.connection_status(secret.get("key") if has_key else None)
+        raw_key = secret.get("key") if has_key else None
+        conn_status = await adapter.connection_status(raw_key)
+        usage_data = await adapter.fetch_usage_analytics(raw_key) if has_key else {}
 
         gateway_state = "offline"
         if current_gateway.get("running"):
             gateway_state = "healthy" if current_gateway.get("status") == "ready" else current_gateway.get("status", "running")
         elif gateway_cfg.get("paused"):
             gateway_state = "paused"
+
+        balance_obj = conn_status.get("balance")
+        if not balance_obj or not balance_obj.get("available"):
+            if usage_data.get("available"):
+                balance_obj = {
+                    "available": True,
+                    "amount": usage_data.get("remaining_credits"),
+                    "currency": "USD",
+                    "reason": None,
+                }
+            else:
+                balance_obj = {
+                    "available": False,
+                    "amount": None,
+                    "currency": "CREDIT",
+                    "reason": "Not available without Orbio Remote MCP authorization",
+                }
+
+        usage_obj = {
+            "available": bool(usage_data.get("available")),
+            "amount": usage_data.get("usage") if usage_data.get("available") else None,
+            "currency": "USD" if has_key else "CREDIT",
+            "reason": None if usage_data.get("available") else "Usage reporting not available in this release",
+        }
 
         return {
             "connected": has_key,
@@ -287,18 +313,8 @@ def create_app(
                 "smart_routing": bool(gateway_cfg.get("smart_routing") or "openrouter/auto" in gateway_cfg.get("models", [])),
                 "running": current_gateway.get("running", False),
             },
-            "balance": conn_status.get("balance", {
-                "available": False,
-                "amount": None,
-                "currency": "CREDIT",
-                "reason": "Not available without Orbio Remote MCP authorization",
-            }),
-            "usage": {
-                "available": False,
-                "amount": None,
-                "currency": "CREDIT",
-                "reason": "Usage reporting not available in this release",
-            },
+            "balance": balance_obj,
+            "usage": usage_obj,
             "mcp": conn_status.get("mcp", {"configured": False, "capabilities": []}),
             "last_error": None,
         }
@@ -610,13 +626,15 @@ def create_app(
                     adapter.clear_cache()
                     return {
                         "status": "disconnected",
-                        "message": "Solana wallet unlinked successfully.",
+                        "message": "Wallet unlinked successfully.",
                     }
 
                 import re
-                if not re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", address):
+                is_evm = bool(re.match(r"^0x[a-fA-F0-9]{40}$", address))
+                is_sol = bool(re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", address))
+                if not is_evm and not is_sol:
                     return JSONResponse(
-                        {"error": "Invalid Solana public address. Must be 32-44 base58 characters."},
+                        {"error": "Invalid Solana public address or Robinhood EVM address. Must be 32-44 base58 characters or 40 hex characters."},
                         status_code=400,
                     )
 
@@ -632,10 +650,11 @@ def create_app(
 
         adapter.clear_cache()
         wallet_info = await adapter.fetch_wallet_holdings(address)
+        net_label = "Robinhood" if wallet_info.get("network", "").startswith("Robinhood") else "Solana"
         return {
             "status": "linked",
             "wallet": wallet_info,
-            "message": f"Solana wallet linked. Tier: {wallet_info.get('tier_name')}",
+            "message": f"{net_label} wallet linked. Tier: {wallet_info.get('tier_name')}",
         }
 
     @app.post("/v1/actions")

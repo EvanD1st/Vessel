@@ -345,9 +345,10 @@ export type OrbioUsageAnalytics = {
 export type OrbioWalletInfo = {
   wallet_address: string | null;
   holdings: number;
-  tier: number;
+  tier: number | string;
   tier_name: string;
-  tier_perks: {
+  network?: string;
+  tier_perks?: {
     multiplier: number;
     routing_priority: string;
     description: string;

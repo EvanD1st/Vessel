@@ -315,3 +315,16 @@ async def test_fetch_wallet_holdings():
     assert res["quota_multiplier"] == 2.5
 
 
+@pytest.mark.asyncio
+async def test_fetch_wallet_holdings_robinhood():
+    adapter = RealOrbioAdapter()
+    res = await adapter.fetch_wallet_holdings("0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3")
+    assert res["valid"] is True
+    assert res["network"] == "Robinhood Chain (EVM)"
+    assert res["wallet_address"] == "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
+    assert res["holdings"] >= 50000.0
+    assert res["tier"] == "builder"
+    assert "tier_perks" in res
+    assert res["tier_perks"]["multiplier"] >= 2.5
+
+

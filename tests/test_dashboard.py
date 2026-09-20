@@ -386,12 +386,20 @@ def test_orbio_usage_and_wallet(bridge):
     assert u_res2.status_code == 200
     assert u_res2.json()["wallet"]["valid"] is True
 
-    # 5. Disconnect wallet
+    # 5. Link valid Robinhood wallet
+    w_rh = bridge.post("/v1/orbio/wallet", json={"address": "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"})
+    assert w_rh.status_code == 200
+    assert w_rh.json()["status"] == "linked"
+    assert w_rh.json()["wallet"]["valid"] is True
+    assert "Robinhood" in w_rh.json()["message"]
+    assert w_rh.json()["wallet"]["network"] == "Robinhood Chain (EVM)"
+
+    # 6. Disconnect wallet
     w_disc = bridge.post("/v1/orbio/wallet", json={"action": "disconnect"})
     assert w_disc.status_code == 200
     assert w_disc.json()["status"] == "disconnected"
 
-    # 6. Usage no longer includes wallet
+    # 7. Usage no longer includes wallet
     u_res3 = bridge.get("/v1/orbio/usage")
     assert u_res3.json()["wallet"] is None
 

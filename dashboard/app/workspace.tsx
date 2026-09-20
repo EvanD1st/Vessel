@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Component, type ReactNode, type ErrorInfo, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -108,6 +108,48 @@ const navigation = [
   { name: 'Recovery', icon: History },
   { name: 'Orbio', icon: Wallet },
 ];
+
+class ErrorBoundary extends Component<
+  { children: ReactNode; fallbackTitle?: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode; fallbackTitle?: string }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ErrorBoundary caught display error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="empty-inline" style={{ padding: 32, textAlign: 'center' }}>
+          <TriangleAlert size={28} style={{ margin: '0 auto 12px', color: '#ffb74d' }} />
+          <h3>{this.props.fallbackTitle || 'Unable to display this view'}</h3>
+          <p style={{ maxWidth: 480, margin: '8px auto', fontSize: 13, color: 'var(--muted)' }}>
+            {this.state.error?.message || 'A transient display error occurred while updating records.'}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ marginTop: 12 }}
+          >
+            <RefreshCw size={14} style={{ marginRight: 6 }} />
+            Reload section
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function Workspace({
   signedIn,
@@ -613,10 +655,11 @@ export default function Workspace({
       const res = await linkOrbioWallet(current, address, action);
       if (res.wallet) {
         setOrbioUsage((prev) => prev ? { ...prev, wallet: res.wallet } : null);
+        const network = res.wallet.network || (res.wallet.wallet_address?.startsWith('0x') ? 'Robinhood' : 'Solana');
         setMessage(
           action === 'disconnect'
-            ? 'Solana wallet unlinked. Tier reset to Community.'
-            : `Solana wallet linked! Tier: ${res.wallet.tier_name} (${res.wallet.holdings.toLocaleString()} $ORBIO)`
+            ? 'Wallet unlinked. Tier reset to Community.'
+            : `${network} wallet linked! Tier: ${res.wallet.tier_name} (${(Number(res.wallet.holdings) || 0).toLocaleString()} $ORBIO)`
         );
       }
       setWalletModalOpen(false);
@@ -892,7 +935,7 @@ export default function Workspace({
     (task) => task.run_id === snapshot?.lease?.holder_run_id,
   );
   const proposals =
-    snapshot?.proposals.filter((proposal) => !proposal.decision) ?? [];
+    (snapshot?.proposals ?? []).filter((proposal) => !proposal.decision);
   const mutate = !!snapshot && live,
     active = mutate && snapshot?.lease?.status === 'active',
     paused = mutate && snapshot?.lease?.status === 'paused';
@@ -1033,6 +1076,7 @@ export default function Workspace({
               </Button>
             </div>
           )}
+          <ErrorBoundary key={view} fallbackTitle={`Unable to display ${view} view`}>
           {view === 'Overview' && (
             <>
               <div className="overview-hero">
@@ -2217,17 +2261,13 @@ export default function Workspace({
                         <div className="quota-stat-main">
                           <span className="quota-sub">Remaining Credits</span>
                           <span className="quota-number" style={{ color: '#00f0b5' }}>
-                            ${typeof orbioUsage?.usage?.remaining_credits === 'number'
-                              ? orbioUsage.usage.remaining_credits.toFixed(4)
-                              : '0.0000'}
+                            ${(Number(orbioUsage?.usage?.remaining_credits) || 0).toFixed(4)}
                           </span>
                         </div>
                         <div className="quota-stat-main" style={{ textAlign: 'right' }}>
                           <span className="quota-sub">Period Usage</span>
                           <span className="quota-number" style={{ fontSize: 20 }}>
-                            ${typeof orbioUsage?.usage?.usage === 'number'
-                              ? orbioUsage.usage.usage.toFixed(4)
-                              : '0.0000'}
+                            ${(Number(orbioUsage?.usage?.usage) || 0).toFixed(4)}
                           </span>
                         </div>
                       </div>
@@ -2237,17 +2277,15 @@ export default function Workspace({
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 6, color: 'var(--muted)' }}>
                           <span>Quota Utilization</span>
                           <span>
-                            {typeof orbioUsage?.usage?.percent_used === 'number'
-                              ? `${orbioUsage.usage.percent_used.toFixed(1)}%`
-                              : '0.0%'}
-                            {typeof orbioUsage?.usage?.total_credits === 'number' && orbioUsage.usage.total_credits > 0 ? ` of $${orbioUsage.usage.total_credits.toFixed(2)}` : ''}
+                            {(Number(orbioUsage?.usage?.percent_used) || 0).toFixed(1)}%
+                            {Number(orbioUsage?.usage?.total_credits) > 0 ? ` of $${(Number(orbioUsage?.usage?.total_credits) || 0).toFixed(2)}` : ''}
                           </span>
                         </div>
                         <div className="quota-progress-track">
                           <div
-                            className={`quota-progress-fill ${(orbioUsage?.usage?.percent_used ?? 0) > 85 ? 'warning' : ''}`}
+                            className={`quota-progress-fill ${(Number(orbioUsage?.usage?.percent_used) || 0) > 85 ? 'warning' : ''}`}
                             style={{
-                              width: `${Math.min(Math.max(orbioUsage?.usage?.percent_used ?? 0, 2), 100)}%`,
+                              width: `${Math.min(Math.max(Number(orbioUsage?.usage?.percent_used) || 0, 2), 100)}%`,
                             }}
                           />
                         </div>
@@ -2257,11 +2295,11 @@ export default function Workspace({
                       <div className="rate-limits-row">
                         <span className="rate-limit-badge" title="Requests per minute rate limit">
                           <Zap size={13} style={{ color: '#00d2ff' }} />
-                          {orbioUsage?.usage?.rate_limits?.requests_per_minute ?? 200} req/min
+                          {orbioUsage?.usage?.rate_limits?.requests_per_minute ?? 120} req/min
                         </span>
                         <span className="rate-limit-badge" title="Tokens per minute rate limit">
                           <Cpu size={13} style={{ color: '#a855f7' }} />
-                          {orbioUsage?.usage?.rate_limits?.tokens_per_minute?.toLocaleString() ?? '40,000'} tok/min
+                          {(Number(orbioUsage?.usage?.rate_limits?.tokens_per_minute) || 60000).toLocaleString()} tok/min
                         </span>
                         {orbioUsage?.usage?.label && (
                           <span className="rate-limit-badge" title="Key label">
@@ -2291,7 +2329,7 @@ export default function Workspace({
                         <div className="quota-stat-main">
                           <span className="quota-sub">Verified Holdings</span>
                           <span className="quota-number" style={{ color: '#a855f7' }}>
-                            {orbioUsage?.wallet?.holdings ? orbioUsage.wallet.holdings.toLocaleString() : '0'}{' '}
+                            {orbioUsage?.wallet?.holdings ? (Number(orbioUsage.wallet.holdings) || 0).toLocaleString() : '0'}{' '}
                             <span style={{ fontSize: 16, color: 'var(--primary)' }}>$ORBIO</span>
                           </span>
                         </div>
@@ -2320,7 +2358,7 @@ export default function Workspace({
                               {orbioUsage.wallet.wallet_address.slice(0, 6)}...{orbioUsage.wallet.wallet_address.slice(-6)}
                             </span>
                           ) : (
-                            <span style={{ color: 'var(--muted)' }}>No Solana wallet linked</span>
+                            <span style={{ color: 'var(--muted)' }}>No Robinhood wallet linked</span>
                           )}
                         </div>
                         {orbioUsage?.wallet?.wallet_address ? (
@@ -2329,7 +2367,7 @@ export default function Workspace({
                             size="sm"
                             style={{ height: 26, fontSize: 11, padding: '0 8px' }}
                             onClick={() => void handleLinkWallet(undefined, 'disconnect')}
-                            title="Unlink Solana wallet"
+                            title="Unlink Robinhood wallet"
                           >
                             <Unplug size={12} style={{ marginRight: 4 }} />
                             Unlink
@@ -2345,7 +2383,7 @@ export default function Workspace({
                             }}
                           >
                             <Link2 size={12} style={{ marginRight: 4 }} />
-                            Link Solana Wallet
+                            Link Robinhood Wallet
                           </Button>
                         )}
                       </div>
@@ -2376,7 +2414,7 @@ export default function Workspace({
                         </div>
                         <div>
                           <dt>Remote MCP</dt>
-                          <dd>{orbio.mcp.configured ? 'Configured' : 'Fail-Closed / Unavailable'}</dd>
+                          <dd>{orbio.mcp?.configured ? 'Configured' : 'Fail-Closed / Direct'}</dd>
                         </div>
                       </dl>
                       <div className="button-row" style={{ marginTop: 'auto' }}>
@@ -2406,20 +2444,20 @@ export default function Workspace({
                     <div className="card-panel">
                       <div className="card-panel-header">
                         <span className="card-tag">ACCOUNT HEALTH</span>
-                        <h4>Inference & Balance</h4>
+                        <h4>Inference &amp; Balance</h4>
                       </div>
                       <div className="balance-display">
-                        {orbio.balance.available && orbio.balance.amount !== null ? (
+                        {orbio.balance?.available && orbio.balance?.amount !== null ? (
                           <>
                             <span className="balance-amount">{orbio.balance.amount}</span>
-                            <span className="balance-currency">{orbio.balance.currency}</span>
+                            <span className="balance-currency">{orbio.balance.currency || 'USD'}</span>
                           </>
                         ) : (
                           <div>
                             <span className="balance-amount">—</span>{' '}
-                            <span className="balance-currency">CREDIT</span>
+                            <span className="balance-currency">{orbio.balance?.currency || 'CREDIT'}</span>
                             <p className="balance-reason">
-                              {orbio.balance.reason || 'Remote balance unavailable over direct gateway. Inference active.'}
+                              {orbio.balance?.reason || 'Remote balance unavailable over direct gateway. Inference active.'}
                             </p>
                           </div>
                         )}
@@ -2428,14 +2466,14 @@ export default function Workspace({
                         <div>
                           <dt>Usage Reported</dt>
                           <dd>
-                            {orbio.usage.available && orbio.usage.amount !== null
-                              ? `${orbio.usage.amount} ${orbio.usage.currency}`
+                            {orbio.usage?.available && orbio.usage?.amount !== null
+                              ? `${orbio.usage.amount} ${orbio.usage.currency || 'USD'}`
                               : 'Via Orbio Console'}
                           </dd>
                         </div>
                         <div>
                           <dt>Management Mode</dt>
-                          <dd>{orbio.mcp.configured ? 'Remote MCP' : 'Gateway-Only'}</dd>
+                          <dd>{orbio.mcp?.configured ? 'Remote MCP' : 'Gateway-Only'}</dd>
                         </div>
                       </dl>
                     </div>
@@ -2446,13 +2484,13 @@ export default function Workspace({
                         <h4>Inference Gateway</h4>
                       </div>
                       <div className="gateway-status-row">
-                        <span className={`status-pill ${orbio.gateway.running ? 'pill-green' : 'pill-yellow'}`}>
-                          {orbio.gateway.running ? 'Active Proxy' : 'Standby'}
+                        <span className={`status-pill ${orbio.gateway?.running ? 'pill-green' : 'pill-yellow'}`}>
+                          {orbio.gateway?.running ? 'Active Proxy' : 'Standby'}
                         </span>
-                        <span className="port-badge">Port {orbio.gateway.port}</span>
+                        <span className="port-badge">Port {orbio.gateway?.port ?? 8091}</span>
                       </div>
                       <p className="path-text" style={{ fontSize: 12 }}>
-                        {orbio.gateway.base_url}
+                        {orbio.gateway?.base_url ?? 'http://127.0.0.1:8091'}
                       </p>
                       <div className="models-list">
                         <span className="models-title">ACTIVE DEFAULT ROUTE</span>
@@ -2460,7 +2498,7 @@ export default function Workspace({
                           <span className="model-chip highlight">
                             {isSmartRouting
                               ? 'openrouter/auto (Smart Dynamic)'
-                              : activeGatewayModel || (orbio.gateway.models && orbio.gateway.models[0]) || 'claude-sonnet-4.5'}
+                              : activeGatewayModel || (orbio.gateway?.models && orbio.gateway.models[0]) || 'claude-sonnet-4.5'}
                           </span>
                         </div>
                       </div>
@@ -2471,9 +2509,9 @@ export default function Workspace({
                     <div className="models-panel-header">
                       <div>
                         <span className="card-tag">MODEL INTELLIGENCE</span>
-                        <h4>Model Routing & Catalog</h4>
+                        <h4>Model Routing &amp; Catalog</h4>
                         <p>
-                          Select which frontier model powers your local gateway (`http://127.0.0.1:{orbio.gateway.port}/v1`), or activate OpenRouter’s dynamic auto-router.
+                          Select which frontier model powers your local gateway (`http://127.0.0.1:{orbio.gateway?.port ?? 8091}/v1`), or activate OpenRouter’s dynamic auto-router.
                         </p>
                       </div>
                       <div className="smart-routing-card">
@@ -2576,10 +2614,10 @@ export default function Workspace({
                                 </div>
                                 <div className="model-card-meta">
                                   <span className="meta-pill">
-                                    {(model.context_length / 1000).toFixed(0)}k context
+                                    {((Number(model.context_length) || 0) / 1000).toFixed(0)}k context
                                   </span>
                                   <span className="pricing-text">
-                                    {model.pricing.prompt === 'Variable'
+                                    {!model.pricing || model.pricing.prompt === 'Variable'
                                       ? 'Auto Pricing'
                                       : `$${(Number(model.pricing.prompt) * 1000000).toFixed(2)}/1M in`}
                                   </span>
@@ -2663,6 +2701,7 @@ export default function Workspace({
               )}
             </div>
           )}
+          </ErrorBoundary>
           <footer className="page-footer">
             <span>
               <LockKeyhole size={14} />
@@ -2922,9 +2961,9 @@ export default function Workspace({
       >
         <DialogContent className="owner-dialog">
           <DialogHeader>
-            <DialogTitle>Link Solana Public Wallet</DialogTitle>
+            <DialogTitle>Link Robinhood / Web3 Wallet</DialogTitle>
             <DialogDescription>
-              Link your public Solana wallet address (Base58) to verify your $ORBIO holdings and unlock tier perks.
+              Link your Robinhood / EVM wallet address (0x...) or Web3 address to verify your $ORBIO holdings and unlock tier perks.
             </DialogDescription>
           </DialogHeader>
           <div className="security-guarantee-box" style={{ margin: '8px 0' }}>
@@ -2932,7 +2971,7 @@ export default function Workspace({
             <div className="guarantee-text">
               <strong>Zero-Knowledge Wallet Security</strong>
               <p style={{ fontSize: 12, margin: 0 }}>
-                Only your public Solana address is requested and stored for balance lookups. VESSEL will NEVER ask for your private key, seed phrase, or wallet signature.
+                Only your public wallet address is requested and stored for balance lookups. VESSEL will NEVER ask for your private key, seed phrase, or wallet signature.
               </p>
             </div>
           </div>
@@ -2944,7 +2983,7 @@ export default function Workspace({
             }}
           >
             <div className="form-field">
-              <label htmlFor="solana-wallet-input">Solana Public Address</label>
+              <label htmlFor="solana-wallet-input">Robinhood / EVM Public Address</label>
               <Input
                 id="solana-wallet-input"
                 autoComplete="off"
@@ -2952,10 +2991,10 @@ export default function Workspace({
                 onChange={(e) => setWalletInput(e.target.value)}
                 required
                 spellCheck={false}
-                placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+                placeholder="e.g. 0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
               />
               <small>
-                32–44 character base58 Solana public address. Validated locally before checking on-chain holdings.
+                42-character Robinhood / EVM address (0x...) or Solana address. Validated locally before checking on-chain holdings.
               </small>
             </div>
             {orbioError && (
