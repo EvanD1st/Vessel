@@ -231,12 +231,26 @@ def serve(state):
         return 0  # A launch at Windows sign-in never duplicates an existing managed instance.
 
 
+def find_default_state() -> Path | None:
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local" / "share")) / "VESSEL" / "projects"
+    if base.exists():
+        candidates = [d for d in base.iterdir() if d.is_dir() and (d / "vessel.sqlite3").is_file()]
+        if candidates:
+            candidates.sort(key=lambda d: (d / "vessel.sqlite3").stat().st_mtime, reverse=True)
+            return candidates[0]
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--state", required=True, type=Path)
+    parser.add_argument("--state", required=False, type=Path)
+    parser.add_argument("uri", nargs="*", default=[])
     args = parser.parse_args()
+    target_state = args.state or find_default_state()
+    if not target_state:
+        return 1
     try:
-        return serve(args.state)
+        return serve(target_state)
     except Exception:
         return 1  # pythonw has no console; launch/status report a missing/invalid profile.
 

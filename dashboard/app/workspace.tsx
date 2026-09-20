@@ -665,8 +665,8 @@ export default function Workspace({
         setOrbioUsage((prev) => prev ? { ...prev, wallet: res.wallet } : null);
         setMessage(
           action === 'disconnect'
-            ? 'Wallet unlinked. Tier reset to Community.'
-            : `Robinhood wallet linked! Holdings: ${(Number(res.wallet.holdings) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $ORBIO (Tier: ${res.wallet.tier_name})`
+            ? 'Wallet unlinked.'
+            : `Robinhood wallet linked! Holdings: ${(Number(res.wallet.holdings) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $ORBIO`
         );
       }
       setWalletModalOpen(false);
@@ -813,6 +813,33 @@ export default function Workspace({
       setTaskRun('');
       setAction(null);
     } catch (error) {
+      // If the companion is stopped or asleep, trigger silent background wake-up and retry
+      try {
+        if (typeof document !== 'undefined') {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = 'vessel://launch';
+          document.body.appendChild(iframe);
+          setTimeout(() => iframe.remove(), 2000);
+
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 500));
+            if (generation !== connectionGeneration.current) return;
+            try {
+              const connected = await resumePairing({ ...pairing, port: item.port });
+              if (generation !== connectionGeneration.current) return;
+              acceptConnection(connected);
+              setTaskRun('');
+              setAction(null);
+              return;
+            } catch {
+              // retry while silent background daemon initializes
+            }
+          }
+        }
+      } catch {
+        // fallback to standard error handling
+      }
       setConnectionError(
         error instanceof Error
           ? error.message
@@ -2327,10 +2354,16 @@ export default function Workspace({
                             Robinhood Chain Holdings
                           </h4>
                         </div>
-                        <span className={`tier-badge tier-${(orbioUsage?.wallet?.tier_name ?? 'community').toLowerCase()}`}>
-                          <Sparkles size={12} />
-                          {`${orbioUsage?.wallet?.tier_name ?? 'Community'} // TIER ${orbioUsage?.wallet?.tier ?? 0}`}
-                        </span>
+                        {orbioUsage?.wallet?.wallet_address && (
+                          <a
+                            href={orbioUsage?.wallet?.explorer_url || `https://robinhoodchain.blockscout.com/token/0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3?a=${orbioUsage.wallet.wallet_address}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#00d2ff', fontSize: 12, textDecoration: 'none' }}
+                          >
+                            Blockscout <ExternalLink size={12} />
+                          </a>
+                        )}
                       </div>
 
                       <div className="quota-stats-row">
@@ -2341,31 +2374,8 @@ export default function Workspace({
                             <span style={{ fontSize: 16, color: 'var(--primary)' }}>$ORBIO</span>
                           </span>
                         </div>
-                        <div className="quota-stat-main" style={{ textAlign: 'right' }}>
-                          <span className="quota-sub">Compute Multiplier</span>
-                          <span className="quota-number" style={{ fontSize: 20, color: '#00d2ff' }}>
-                            {orbioUsage?.wallet?.tier_perks?.multiplier ?? 0.5}x
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ fontSize: 12.5, color: 'var(--muted)', background: 'var(--secondary)', padding: '8px 12px', borderRadius: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <strong style={{ color: 'var(--foreground)' }}>Routing:</strong>
-                          <span>{orbioUsage?.wallet?.tier_perks?.routing_priority ?? 'Basic Inference'}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#00f0b5', marginTop: 4 }}>
-                          <span>● Scans Blockscout every 3m</span>
-                          {orbioUsage?.wallet?.wallet_address && (
-                            <a
-                              href={orbioUsage?.wallet?.explorer_url || `https://robinhoodchain.blockscout.com/token/0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3?a=${orbioUsage.wallet.wallet_address}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#00d2ff', textDecoration: 'none' }}
-                            >
-                              Blockscout <ExternalLink size={11} />
-                            </a>
-                          )}
+                        <div className="quota-stat-main" style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 11, color: '#00f0b5' }}>● Scans Blockscout every 3m</span>
                         </div>
                       </div>
 
@@ -2801,14 +2811,10 @@ export default function Workspace({
             <form className="owner-form" onSubmit={connect}>
               <ol className="connection-steps">
                 <li>
-                  Enroll your project using the VESSEL companion, then run this
-                  in its terminal:
-                  <pre>{`.\\vessel.cmd dashboard --origin '${origin}'`}</pre>
+                  Click <strong>Open Dashboard</strong> in the VESSEL VS Code extension, or start the silent companion background daemon.
                 </li>
                 <li>
-                  Paste the private connection link printed by that command.
-                  Keep the terminal running and allow local network access when
-                  your browser asks.
+                  Paste your private connection link below. Allow local network access when your browser prompts. The companion operates silently in the background with zero open terminals.
                 </li>
               </ol>
               <div className="form-field">
@@ -2836,7 +2842,7 @@ export default function Workspace({
                   onChange={(event) => setLink(event.target.value)}
                   required
                   spellCheck={false}
-                  placeholder="Paste from your local terminal"
+                  placeholder="Paste private connection link"
                 />
                 <small>
                   This browser saves a device credential for automatic
@@ -2848,7 +2854,7 @@ export default function Workspace({
                 <div role="alert" className="notice error">
                   {connectError}
                   <p>
-                    Check that the link is fresh, the terminal is running, and
+                    Check that the link is fresh, the background companion is active, and
                     this site has local network permission.
                   </p>
                 </div>
@@ -2996,7 +3002,7 @@ export default function Workspace({
           <DialogHeader>
             <DialogTitle>Link Robinhood Wallet</DialogTitle>
             <DialogDescription>
-              Link your Robinhood Chain address (0x...) to scan your verified $ORBIO token holdings on Blockscout and unlock tier compute perks.
+              Link your Robinhood Chain address (0x...) to scan your verified $ORBIO token holdings on Blockscout.
             </DialogDescription>
           </DialogHeader>
           <div className="security-guarantee-box" style={{ margin: '8px 0' }}>
