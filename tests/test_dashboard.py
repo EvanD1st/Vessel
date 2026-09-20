@@ -372,27 +372,20 @@ def test_orbio_usage_and_wallet(bridge):
     # 2. Link invalid wallet fails
     w_bad = bridge.post("/v1/orbio/wallet", json={"address": "short"})
     assert w_bad.status_code == 400
-    assert "Invalid Solana public address" in w_bad.json()["error"]
+    assert "Invalid Robinhood Chain address" in w_bad.json()["error"]
 
-    # 3. Link valid Solana wallet
-    w_ok = bridge.post("/v1/orbio/wallet", json={"address": "8F4bA3hJ9eKf1LmNpQrStUvWxYz23456789123456789"})
+    # 3. Link valid Robinhood Chain EVM wallet
+    w_ok = bridge.post("/v1/orbio/wallet", json={"address": "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"})
     assert w_ok.status_code == 200
     assert w_ok.json()["status"] == "linked"
     assert w_ok.json()["wallet"]["valid"] is True
-    assert w_ok.json()["wallet"]["tier"] in ("community", "builder", "sovereign", "explorer")
+    assert "Robinhood" in w_ok.json()["message"]
+    assert w_ok.json()["wallet"]["network"] == "Robinhood Chain"
 
     # 4. Usage reflects linked wallet
     u_res2 = bridge.get("/v1/orbio/usage")
     assert u_res2.status_code == 200
     assert u_res2.json()["wallet"]["valid"] is True
-
-    # 5. Link valid Robinhood wallet
-    w_rh = bridge.post("/v1/orbio/wallet", json={"address": "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"})
-    assert w_rh.status_code == 200
-    assert w_rh.json()["status"] == "linked"
-    assert w_rh.json()["wallet"]["valid"] is True
-    assert "Robinhood" in w_rh.json()["message"]
-    assert w_rh.json()["wallet"]["network"] == "Robinhood Chain (EVM)"
 
     # 6. Disconnect wallet
     w_disc = bridge.post("/v1/orbio/wallet", json={"action": "disconnect"})

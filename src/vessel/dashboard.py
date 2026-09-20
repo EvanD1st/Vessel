@@ -631,10 +631,9 @@ def create_app(
 
                 import re
                 is_evm = bool(re.match(r"^0x[a-fA-F0-9]{40}$", address))
-                is_sol = bool(re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", address))
-                if not is_evm and not is_sol:
+                if not is_evm:
                     return JSONResponse(
-                        {"error": "Invalid Solana public address or Robinhood EVM address. Must be 32-44 base58 characters or 40 hex characters."},
+                        {"error": "Invalid Robinhood Chain address. Must be a 42-character 0x hex address."},
                         status_code=400,
                     )
 
@@ -650,11 +649,10 @@ def create_app(
 
         adapter.clear_cache()
         wallet_info = await adapter.fetch_wallet_holdings(address)
-        net_label = "Robinhood" if wallet_info.get("network", "").startswith("Robinhood") else "Solana"
         return {
             "status": "linked",
             "wallet": wallet_info,
-            "message": f"{net_label} wallet linked. Tier: {wallet_info.get('tier_name')}",
+            "message": f"Robinhood wallet linked. Tier: {wallet_info.get('tier_name')}",
         }
 
     @app.post("/v1/actions")

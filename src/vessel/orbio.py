@@ -21,7 +21,6 @@ OPENROUTER_AUTH_KEY_ENDPOINT = ORBIO_AUTH_KEY_ENDPOINT
 ORBIO_KEY_ENDPOINT = "https://api.orbio.so/api/v1/key"
 OPENROUTER_CREDITS_ENDPOINT = "https://openrouter.ai/api/v1/credits"
 ORBIO_MCP_ENDPOINT = "https://www.orbio.so/api/mcp"
-SOLANA_RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
 ROBINHOOD_ORBIO_CONTRACT = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
 DEFAULT_PROBE_MODEL = "openai/gpt-4.1-mini"
 CACHE_TTL_SECONDS = 60.0
@@ -673,7 +672,7 @@ class RealOrbioAdapter:
         return analytics
 
     async def fetch_wallet_holdings(self, wallet_address: str) -> dict[str, Any]:
-        """Verify Robinhood (EVM) or Solana wallet address and calculate $ORBIO holding tier."""
+        """Verify Robinhood Chain (EVM) wallet address and calculate $ORBIO holding tier."""
         import re
 
         if not wallet_address:
@@ -686,12 +685,10 @@ class RealOrbioAdapter:
             }
 
         is_evm = bool(re.match(r"^0x[a-fA-F0-9]{40}$", wallet_address))
-        is_sol = bool(re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", wallet_address))
-
-        if not is_evm and not is_sol:
+        if not is_evm:
             return {
                 "valid": False,
-                "error": "Invalid Solana public address or Robinhood EVM address. Must be 32-44 base58 characters or 0x hex address.",
+                "error": "Invalid Robinhood Chain address. Must be a 42-character 0x hex address.",
                 "wallet_address": wallet_address,
                 "holdings": 0.0,
                 **calculate_orbio_tier(0.0),
@@ -702,50 +699,7 @@ class RealOrbioAdapter:
             return cached
 
         holdings_val = 0.0
-        network = "Robinhood Chain (EVM)" if is_evm else "Solana"
-        sol_val = 0.0
-
-        if is_evm:
-            # Verified linked Robinhood/EVM wallet holding $ORBIO token
-            # Contract: 0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3 on Robinhood Chain
-            holdings_val = 50_000.0
-        elif is_sol:
-            try:
-                async with httpx.AsyncClient(timeout=8.0, transport=self.transport) as client:
-                    # Query native SOL balance
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "getBalance",
-                        "params": [wallet_address],
-                    }
-                    resp = await client.post(SOLANA_RPC_ENDPOINT, json=payload)
-                    if resp.status_code == 200:
-                        res = resp.json().get("result", {})
-                        sol_val = round(float(res.get("value", 0)) / 1e9, 4)
-
-                    # Query token accounts for $ORBIO holdings
-                    token_payload = {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "method": "getTokenAccountsByOwner",
-                        "params": [
-                            wallet_address,
-                            {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-                            {"encoding": "jsonParsed"},
-                        ],
-                    }
-                    t_resp = await client.post(SOLANA_RPC_ENDPOINT, json=token_payload)
-                    if t_resp.status_code == 200:
-                        accounts = t_resp.json().get("result", {}).get("value", [])
-                        for item in accounts:
-                            info = item.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
-                            token_amount = info.get("tokenAmount", {})
-                            ui_amount = float(token_amount.get("uiAmount", 0) or 0)
-                            if ui_amount > holdings_val:
-                                holdings_val = ui_amount
-            except Exception:
-                pass
+        network = "Robinhood Chain"
 
         tier_info = calculate_orbio_tier(holdings_val)
         tier_number = (
@@ -767,7 +721,6 @@ class RealOrbioAdapter:
             "wallet_address": wallet_address,
             "masked_wallet": f"{wallet_address[:6]}...{wallet_address[-4:]}" if len(wallet_address) > 10 else wallet_address,
             "holdings": holdings_val,
-            "sol_balance": sol_val,
             "tier": tier_info["tier"],
             "tier_level": tier_number,
             "tier_name": tier_info["tier_name"],

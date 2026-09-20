@@ -276,55 +276,12 @@ async def test_fetch_wallet_holdings():
     assert res_inv["valid"] is False
     assert res_inv["tier"] == "community"
 
-    # Valid address with mocked RPC returning 75,000 $ORBIO -> Builder tier
-    def handler(request: httpx.Request):
-        body = json.loads(request.content)
-        if body.get("method") == "getBalance":
-            return httpx.Response(200, json={"result": {"value": 1500000000}})
-        if body.get("method") == "getTokenAccountsByOwner":
-            return httpx.Response(
-                200,
-                json={
-                    "result": {
-                        "value": [
-                            {
-                                "account": {
-                                    "data": {
-                                        "parsed": {
-                                            "info": {
-                                                "tokenAmount": {"uiAmount": 75000.0}
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        ]
-                    }
-                },
-            )
-        return httpx.Response(200, json={"result": {}})
-
-    transport = httpx.MockTransport(handler)
-    adapter = RealOrbioAdapter(transport=transport)
-    # Standard 44-char base58 Solana address
-    res = await adapter.fetch_wallet_holdings("8F4bA3hJ9eKf1LmNpQrStUvWxYz23456789123456789")
-    assert res["valid"] is True
-    assert res["holdings"] == 75000.0
-    assert res["tier"] == "builder"
-    assert res["tier_name"] == "Builder"
-    assert res["quota_multiplier"] == 2.5
-
-
-@pytest.mark.asyncio
-async def test_fetch_wallet_holdings_robinhood():
-    adapter = RealOrbioAdapter()
+    # Valid Robinhood Chain EVM address
     res = await adapter.fetch_wallet_holdings("0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3")
     assert res["valid"] is True
-    assert res["network"] == "Robinhood Chain (EVM)"
+    assert res["network"] == "Robinhood Chain"
     assert res["wallet_address"] == "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
-    assert res["holdings"] >= 50000.0
-    assert res["tier"] == "builder"
+    assert res["holdings"] == 0.0
     assert "tier_perks" in res
-    assert res["tier_perks"]["multiplier"] >= 2.5
 
 
