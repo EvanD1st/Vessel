@@ -489,7 +489,10 @@ export function activate(context: vscode.ExtensionContext): void {
         openGuide: async () => { await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionUri.fsPath, 'README.md'))); },
         openDashboard: async () => {
             try {
-                const conn = await (await app.client()).request<{ connect_url: string }>('connection', { workspace: app.selected() });
+                let conn = await (await app.client()).request<{ connect_url: string }>('connection', { workspace: app.selected() }).catch(() => null);
+                if (!conn?.connect_url) {
+                    conn = await (await app.client()).request<{ connect_url: string }>('launch', { workspace: app.selected() }).catch(() => null);
+                }
                 if (conn?.connect_url) {
                     await vscode.env.clipboard.writeText(conn.connect_url);
                     await vscode.env.openExternal(vscode.Uri.parse(conn.connect_url));
