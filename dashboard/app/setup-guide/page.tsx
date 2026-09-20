@@ -83,11 +83,11 @@ export default function SetupGuide() {
           <div className="setup-guide-footer web3-guide-footer">
             <a
               href="/downloads/vessel.vsix"
-              download="vessel-companion-0.3.0.vsix"
+              download="vessel-companion-0.3.1.vsix"
               className="primary-action web3-submit-btn text-center block mb-3 text-decoration-none"
             >
               <span className="btn-state">
-                DOWNLOAD VESSEL VSIX (v0.3.0) ↓
+                DOWNLOAD VESSEL VSIX (v0.3.1) ↓
               </span>
             </a>
             <p id="marketplace-note">Download the .vsix package and install in VS Code via <code>Extensions &gt; ... &gt; Install from VSIX...</code></p>
