@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { createHash } from 'crypto';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+import * as os from 'os';
 import { PythonCli } from './pythonCli';
 import { Compatibility } from './types';
 
@@ -21,6 +23,23 @@ export function isSupportedClineVersion(version: string | undefined): boolean {
     if (maj !== rMaj) { return maj > rMaj; }
     if (min !== rMin) { return min > rMin; }
     return patch >= rPatch;
+}
+export async function detectClineMcpConfig(): Promise<string | undefined> {
+    const homedir = os.homedir();
+    const candidates = [
+        path.join(homedir, '.cline', 'data', 'settings', 'cline_mcp_settings.json'),
+        path.join(process.env.APPDATA || '', 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'settings', 'cline_mcp_settings.json'),
+        path.join(homedir, '.vscode', 'cline_mcp_settings.json')
+    ];
+    for (const candidate of candidates) {
+        try {
+            await fs.access(candidate);
+            return candidate;
+        } catch {
+            // Not found or not accessible
+        }
+    }
+    return undefined;
 }
 export function backupPath(storage: string, extension: string): string {
     return path.join(storage, 'compatibility', createHash('sha256').update(extension.toLowerCase()).digest('hex').slice(0, 24));

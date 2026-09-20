@@ -5,7 +5,7 @@ import { detectPython } from './python';
 import { PythonCli, JsonObject } from './pythonCli';
 import { RuntimeManager } from './runtime';
 import { OnboardingWizard, secretId } from './onboarding';
-import { backupPath, detectCline, inspectCline, isSupportedClineVersion } from './cline';
+import { backupPath, detectCline, detectClineMcpConfig, inspectCline, isSupportedClineVersion } from './cline';
 import { OnboardingWebviewProvider, review } from './webview';
 import { diagnostics, protectionState, VesselStatusManager } from './status';
 import { Plan, Recovery, SetupState, Snapshot } from './types';
@@ -158,8 +158,20 @@ export class Controller implements vscode.Disposable {
         if (!mission) { return; }
         let config = found.profile?.mcp_config;
         if (!config) {
-            await vscode.window.showInformationMessage('In Cline, open MCP Servers → Configure MCP Servers. Select that exact settings file in the next dialog.');
-            config = (await vscode.window.showOpenDialog({ title: 'Select the settings file opened by Cline MCP Configure', canSelectMany: false, filters: { JSON: ['json'] } }))?.[0]?.fsPath;
+            config = await detectClineMcpConfig();
+        }
+        if (!config) {
+            const choice = await vscode.window.showInformationMessage(
+                'In Cline, open MCP Servers → Configure MCP Servers. Select that settings file in the dialog.',
+                'Select settings file'
+            );
+            if (choice === 'Select settings file') {
+                config = (await vscode.window.showOpenDialog({
+                    title: 'Select cline_mcp_settings.json',
+                    canSelectMany: false,
+                    filters: { JSON: ['json'] }
+                }))?.[0]?.fsPath;
+            }
         }
         if (!config) { return; }
         const vesselConfig = vscode.workspace.getConfiguration('vessel');
