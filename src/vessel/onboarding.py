@@ -112,7 +112,7 @@ def prepare(workspace, *, state=None, mission=None, mcp_config=None, origin=None
     if not isinstance(servers, dict):
         raise ValueError("Cline mcpServers must be an object; settings were preserved")
     if manifest:
-        if config != Path(manifest["mcp_path"]):
+        if os.path.normcase(str(config)) != os.path.normcase(str(Path(manifest["mcp_path"]))):
             raise ValueError("Uninstall the owned adapter before changing its MCP settings file")
         if not adapters.inspect("cline", workspace, state)["installed"]:
             raise ValueError("Existing adapter files changed; inspect them before rerunning setup")

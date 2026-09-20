@@ -62,6 +62,14 @@ class Vessel(OwnerWorkflows):
                     self.store.put("control", f"{client}_adapter", {**adapter, "installed": False})
                     with self.store.transaction() as conn:
                         self._gap("cline_configuration_missing_or_changed", conn)
+                else:
+                    self.store.put("control", f"{client}_adapter", {**adapter, "installed": True})
+                    with self.store.transaction() as conn:
+                        health = self._get("control", "health", conn)
+                        if "cline_configuration_missing_or_changed" in health.get("gaps", []):
+                            health["gaps"] = [g for g in health["gaps"] if g != "cline_configuration_missing_or_changed"]
+                            health["state"] = "degraded" if health["gaps"] else ("healthy" if health.get("last_observation") else "unknown")
+                            self.store.put("control", "health", health, conn=conn)
 
     def close(self):
         self.store.close()

@@ -59,7 +59,7 @@ def _manifest(workspace, state_dir):
     if not path.exists():
         return None
     result = _json(path)
-    if result.get("workspace") != str(workspace) or result.get("schema") != 1:
+    if os.path.normcase(str(result.get("workspace"))) != os.path.normcase(str(workspace)) or result.get("schema") != 1:
         raise ValueError("Adapter manifest belongs to another project or version")
     return result
 
@@ -90,7 +90,7 @@ def install(client, workspace, state_dir, python_executable=sys.executable, *, m
     workspace, state_dir = _paths(client, workspace, state_dir)
     existing = _manifest(workspace, state_dir)
     if existing:
-        if mcp_config and Path(mcp_config).absolute() != Path(existing["mcp_path"]):
+        if mcp_config and os.path.normcase(str(Path(mcp_config).absolute())) != os.path.normcase(str(Path(existing["mcp_path"]))):
             raise ValueError("Uninstall the adapter before changing MCP configuration scope")
         result = inspect(client, workspace, state_dir)
         if not result["installed"]:
