@@ -22,6 +22,8 @@ ORBIO_KEY_ENDPOINT = "https://api.orbio.so/api/v1/key"
 OPENROUTER_CREDITS_ENDPOINT = "https://openrouter.ai/api/v1/credits"
 ORBIO_MCP_ENDPOINT = "https://www.orbio.so/api/mcp"
 ROBINHOOD_ORBIO_CONTRACT = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
+ROBINHOOD_RPC_ENDPOINT = "https://rpc.mainnet.chain.robinhood.com"
+ROBINHOOD_BLOCKSCOUT_URL = "https://robinhoodchain.blockscout.com"
 DEFAULT_PROBE_MODEL = "openai/gpt-4.1-mini"
 CACHE_TTL_SECONDS = 60.0
 
@@ -701,6 +703,36 @@ class RealOrbioAdapter:
         holdings_val = 0.0
         network = "Robinhood Chain"
 
+        # Query live $ORBIO ERC-20 balance on Robinhood Chain
+        try:
+            padded_addr = wallet_address.lower().replace("0x", "").rjust(64, "0")
+            call_data = f"0x70a08231{padded_addr}"  # balanceOf(address)
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_call",
+                "params": [
+                    {
+                        "to": ROBINHOOD_ORBIO_CONTRACT,
+                        "data": call_data,
+                    },
+                    "latest",
+                ],
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "VESSEL-Agent/1.0",
+            }
+            async with httpx.AsyncClient(timeout=8.0, transport=self.transport) as client:
+                resp = await client.post(ROBINHOOD_RPC_ENDPOINT, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    raw_result = resp.json().get("result")
+                    if isinstance(raw_result, str) and raw_result.startswith("0x"):
+                        int_balance = int(raw_result, 16)
+                        holdings_val = round(int_balance / 1e18, 4)
+        except Exception:
+            pass
+
         tier_info = calculate_orbio_tier(holdings_val)
         tier_number = (
             3 if tier_info["tier"] == "sovereign"
@@ -715,12 +747,15 @@ class RealOrbioAdapter:
             "description": ", ".join(tier_info["features"]),
         }
 
+        explorer_url = f"{ROBINHOOD_BLOCKSCOUT_URL}/token/{ROBINHOOD_ORBIO_CONTRACT}?a={wallet_address}"
+
         result = {
             "valid": True,
             "network": network,
             "wallet_address": wallet_address,
             "masked_wallet": f"{wallet_address[:6]}...{wallet_address[-4:]}" if len(wallet_address) > 10 else wallet_address,
             "holdings": holdings_val,
+            "explorer_url": explorer_url,
             "tier": tier_info["tier"],
             "tier_level": tier_number,
             "tier_name": tier_info["tier_name"],

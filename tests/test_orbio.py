@@ -276,12 +276,27 @@ async def test_fetch_wallet_holdings():
     assert res_inv["valid"] is False
     assert res_inv["tier"] == "community"
 
-    # Valid Robinhood Chain EVM address
-    res = await adapter.fetch_wallet_holdings("0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3")
+    # Mocked Robinhood RPC returning 1342.54 $ORBIO (1342540000000000000000 in hex)
+    def handler(request: httpx.Request):
+        body = json.loads(request.content)
+        if body.get("method") == "eth_call":
+            return httpx.Response(
+                200,
+                json={"jsonrpc": "2.0", "id": 1, "result": "0x000000000000000000000000000000000000000000000048c77c38eb10ee0000"},
+            )
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(handler)
+    mock_adapter = RealOrbioAdapter(transport=transport)
+
+    res = await mock_adapter.fetch_wallet_holdings("0x5f1A65c4C3011eb22c2882c3e9ea8299f42Ccf7E")
     assert res["valid"] is True
     assert res["network"] == "Robinhood Chain"
-    assert res["wallet_address"] == "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3"
-    assert res["holdings"] == 0.0
+    assert res["wallet_address"] == "0x5f1A65c4C3011eb22c2882c3e9ea8299f42Ccf7E"
+    assert res["holdings"] == 1342.54
+    assert "explorer_url" in res
+    assert "robinhoodchain.blockscout.com" in res["explorer_url"]
+    assert "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3" in res["explorer_url"]
     assert "tier_perks" in res
 
 

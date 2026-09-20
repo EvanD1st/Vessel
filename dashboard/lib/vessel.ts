@@ -348,6 +348,8 @@ export type OrbioWalletInfo = {
   tier: number | string;
   tier_name: string;
   network?: string;
+  explorer_url?: string;
+  checked_at?: number;
   tier_perks?: {
     multiplier: number;
     routing_priority: string;
