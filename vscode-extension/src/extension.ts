@@ -229,6 +229,9 @@ export class Controller implements vscode.Disposable {
         if (!primary) { return; }
         const fallback = await vscode.window.showQuickPick(catalog.models.filter(model => model !== primary.label), { title: 'Fallback model (only before response commitment)', ignoreFocusOut: true });
         if (!fallback) { return; }
+        state.models = [primary.label, fallback];
+        state.steps.models = 'passed';
+        await this.wizard.save(state);
         const configuredCompanionPort = vesselConfig.get<number>('companionPort', 8765);
         const configuredGatewayPort = vesselConfig.get<number>('gatewayPort', 8091);
         const companionPort = await this.port('Companion port', found.profile?.port ?? configuredCompanionPort); if (!companionPort) { return; }

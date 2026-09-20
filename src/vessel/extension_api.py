@@ -74,7 +74,7 @@ def prepare(request, storage):
     workspace = safe_directory(onboarding.local_path(request["workspace"]))
     if storage.is_relative_to(workspace) or workspace.is_relative_to(storage):
         raise RequestError("invalid_request")
-    models = model_pair(request["models"])
+    models = model_pair(request.get("models") or list(gateway.MODELS))
     try:
         plan = onboarding.prepare(workspace, state=request.get("state"), mission=request.get("mission"), mcp_config=request.get("mcp_config"),
                                   origin=request.get("origin", "http://localhost:3000"), port=request.get("port", 8765))
@@ -165,7 +165,7 @@ def apply(request, storage):
                         raise RequestError("review_changed")
                     with reviewed_authority(with_service, policy["revision"], record["previous_epoch"]):
                         allowed = list(dict.fromkeys(policy["allowed_models"] + record["models"]))
-                        version = identifier(request["credential_version"])
+                        version = identifier(request.get("credential_version") or uuid.uuid4().hex)
                         if intent and intent["credential_version"] != version:
                             raise RequestError("review_changed")
                         record["routing_intent"] = {"revision": policy["revision"] + int(allowed != policy["allowed_models"]),
@@ -340,7 +340,7 @@ def dispatch(request):
         return {"models": list(gateway.MODELS), "endpoint": gateway.ENDPOINT,
                 "evidence": "docs/gateway-live-20260914.md", "text": "previously_verified", "tools": "previously_verified", "native_cline": "pending"}
     if action == "validate-provider":
-        return asyncio.run(validate_provider(request["key"], request["models"]))
+        return asyncio.run(validate_provider(request["key"], request.get("models") or list(gateway.MODELS)))
     if action == "compatibility":
         return cline_compat.inspect(Path(request["extension"]), Path(request["backup"]))
     if action in {"patch", "restore-patch"}:
@@ -532,8 +532,8 @@ def main():
         encoded = json.dumps({"schema": 1, "ok": False, "code": error.code})
     except Blocked:
         encoded = json.dumps({"schema": 1, "ok": False, "code": "owner_action_blocked"})
-    except Exception:
-        encoded = json.dumps({"schema": 1, "ok": False, "code": "local_operation_failed"})
+    except Exception as error:
+        encoded = json.dumps({"schema": 1, "ok": False, "code": "local_operation_failed", "error": f"{type(error).__name__}: {error}"})
     print(encoded)
 
 
