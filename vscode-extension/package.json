@@ -2,7 +2,7 @@
   "name": "vessel-companion",
   "displayName": "VESSEL - Agent Continuity",
   "description": "Cross-session agent continuity and local rollback for VS Code Cline",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",

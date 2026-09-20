@@ -437,6 +437,8 @@ def dispatch(request):
         return {"running": True, "status": result["status"], "port": result["port"]}
     if action == "stop-companion":
         return desktop.stop(state)
+    if action == "connection":
+        return desktop.connection(state)
     if action == "gateway-launch":
         before = gateway.status(state)
         result = gateway.launch(state, request.get("key"))

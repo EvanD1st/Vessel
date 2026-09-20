@@ -488,6 +488,15 @@ export function activate(context: vscode.ExtensionContext): void {
         rollbackSetup: () => app.rollback(), openLogs: async () => app.openLogs(),
         openGuide: async () => { await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.file(path.join(context.extensionUri.fsPath, 'README.md'))); },
         openDashboard: async () => {
+            try {
+                const conn = await (await app.client()).request<{ connect_url: string }>('connection', { workspace: app.selected() });
+                if (conn?.connect_url) {
+                    await vscode.env.clipboard.writeText(conn.connect_url);
+                    await vscode.env.openExternal(vscode.Uri.parse(conn.connect_url));
+                    void vscode.window.showInformationMessage('Dashboard opened with private companion pairing. Link copied to clipboard.');
+                    return;
+                }
+            } catch { /* Fallback to default dashboard URL if companion not yet running */ }
             const url = vscode.workspace.getConfiguration('vessel').get<string>('dashboardUrl', 'https://vessel-dashboard.cloud-ip.cc');
             await vscode.env.openExternal(vscode.Uri.parse(url));
         }

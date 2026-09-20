@@ -88,10 +88,11 @@ def launch(state, key=None, *, timeout=20):
                 and current.get("models") == config["models"] and current.get("status") == "ready"):
             return current
         raise ValueError("Stop the previous gateway before changing its configuration")
+    (state / "extension-gateway-stop.json").unlink(missing_ok=True)
     env = {**os.environ, KEY_ENV: key}
     process = subprocess.Popen([sys.executable, "-I", "-m", "vessel.extension_gateway", "--state", str(state)],
                                cwd=state, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                               stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0,
                                start_new_session=os.name != "nt")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

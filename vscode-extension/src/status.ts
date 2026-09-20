@@ -32,7 +32,7 @@ const actions: Record<string, string> = {
     'Recover task': 'vessel.recoverTask', 'Confirm continuation': 'vessel.confirmRecovery',
     'Record task': 'vessel.manageTasks', 'Pause protection': 'vessel.pauseProtection',
     'Resume protection': 'vessel.resumeProtection', 'Refresh': 'vessel.showStatus',
-    'Diagnostics': 'vessel.openDiagnostic'
+    'Open dashboard': 'vessel.openDashboard', 'Diagnostics': 'vessel.openDiagnostic'
 };
 
 export class VesselStatusManager implements vscode.Disposable {

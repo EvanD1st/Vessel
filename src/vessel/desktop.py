@@ -91,7 +91,8 @@ def launch(state, *, timeout=20):
         if any(current.get(key) != profile[key] for key in ("origin", "port", "ttl", "python")):
             raise ValueError("A companion with different settings is running. Stop it before launching again")
         return {**current, "status": "already_running"}
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    (state / STOP).unlink(missing_ok=True)
+    flags = (subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0
     process = subprocess.Popen(
         [profile["python"], "-m", "vessel.desktop", "--state", str(state)],
         cwd=state,
