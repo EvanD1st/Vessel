@@ -65,7 +65,12 @@ def _manifest(workspace, state_dir):
 
 
 def _wrapper(python, state_dir, workspace):
-    args = [python, "-m", "vessel.cline", "--state", str(state_dir), "--workspace", str(workspace)]
+    py_bin = python
+    if os.name == "nt" and str(py_bin).lower().endswith("python.exe"):
+        w_bin = Path(py_bin).with_name("pythonw.exe")
+        if w_bin.is_file():
+            py_bin = str(w_bin)
+    args = [py_bin, "-m", "vessel.cline", "--state", str(state_dir), "--workspace", str(workspace)]
     if any(any(ord(ch) < 32 for ch in arg) for arg in args):
         raise ValueError("Hook paths contain control characters")
     if os.name == "nt":
@@ -104,6 +109,10 @@ def install(client, workspace, state_dir, python_executable=sys.executable, *, m
     if not isinstance(data.get("mcpServers", {}), dict):
         raise ValueError("mcpServers must be an object; original file preserved")
     python = str(Path(python_executable).resolve(strict=True))
+    if os.name == "nt" and python.lower().endswith("python.exe"):
+        w_bin = Path(python).with_name("pythonw.exe")
+        if w_bin.is_file():
+            python = str(w_bin)
     name = "vessel-" + hashlib.sha256(str(workspace).casefold().encode()).hexdigest()[:12]
     if name in data.get("mcpServers", {}):
         raise ValueError("MCP server name conflict; existing server preserved")

@@ -110,16 +110,30 @@ const navigation = [
 ];
 
 class ErrorBoundary extends Component<
-  { children: ReactNode; fallbackTitle?: string },
-  { hasError: boolean; error: Error | null }
+  { children: ReactNode; fallbackTitle?: string; resetKey?: unknown },
+  { hasError: boolean; error: Error | null; prevResetKey?: unknown }
 > {
-  constructor(props: { children: ReactNode; fallbackTitle?: string }) {
+  constructor(props: { children: ReactNode; fallbackTitle?: string; resetKey?: unknown }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, prevResetKey: props.resetKey };
   }
 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
+  }
+
+  static getDerivedStateFromProps(
+    props: { resetKey?: unknown },
+    state: { prevResetKey?: unknown },
+  ) {
+    if (props.resetKey !== state.prevResetKey) {
+      return {
+        hasError: false,
+        error: null,
+        prevResetKey: props.resetKey,
+      };
+    }
+    return null;
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -479,7 +493,7 @@ export default function Workspace({
         return;
       }
       if (sessionRef.current !== current) return;
-      if (pairing && state.bridge.renew_after <= Date.now() / 1000) {
+      if (pairing && state.bridge?.renew_after && state.bridge.renew_after <= Date.now() / 1000) {
         const connected = await resumePairing(pairing);
         if (sessionRef.current === current) acceptConnection(connected);
         return;
@@ -494,7 +508,7 @@ export default function Workspace({
         setConnectionError(
           error instanceof Error
             ? error.message
-            : 'Companion is unreachable. Keep the local terminal running and allow this site to reach your local network.',
+            : 'Companion is unreachable. Ensure the companion background service is running and allow this site to reach your local network.',
         );
       }
     } finally {
@@ -954,8 +968,8 @@ export default function Workspace({
       }
     return () => lifecycle.abort();
   }, []);
-  const currentRun = snapshot?.runs.find(
-    (run) => run.id === snapshot.lease?.holder_run_id,
+  const currentRun = (snapshot?.runs ?? []).find(
+    (run) => run.id === snapshot?.lease?.holder_run_id,
   );
   const selectedRun = taskRun || snapshot?.lease?.holder_run_id || '';
   const tasks = (snapshot?.tasks ?? []).filter(
@@ -980,7 +994,7 @@ export default function Workspace({
       task_id: task.id,
       description: task.description,
       status: task.status,
-      dependencies: task.dependencies.join(', '),
+      dependencies: (task.dependencies ?? []).join(', '),
       evidence: task.evidence ?? '',
     });
   }
@@ -1111,7 +1125,7 @@ export default function Workspace({
               </Button>
             </div>
           )}
-          <ErrorBoundary key={view} fallbackTitle={`Unable to display ${view} view`}>
+          <ErrorBoundary key={view + (snapshot ? snapshot.enrollment?.id : 'no-agent')} resetKey={snapshot} fallbackTitle={`Unable to display ${view} view`}>
           {view === 'Overview' && (
             <>
               <div className="overview-hero">
@@ -1122,7 +1136,7 @@ export default function Workspace({
                       {snapshot
                         ? (saved.find(
                             (item) =>
-                              item.enrollmentId === snapshot.enrollment.id,
+                              item.enrollmentId === snapshot?.enrollment?.id,
                           )?.label ?? 'Active Agent')
                         : 'No Agent Connected'}
                     </h2>
@@ -1133,8 +1147,8 @@ export default function Workspace({
                         ? 'pill-offline'
                         : !live && snapshot
                           ? 'pill-offline'
-                          : snapshot?.bridge.capture_worker_running &&
-                              (!snapshot.capture.gaps ||
+                          : snapshot?.bridge?.capture_worker_running &&
+                              (!snapshot?.capture?.gaps ||
                                 snapshot.capture.gaps.length === 0) &&
                               snapshot.lease?.status === 'active'
                             ? 'pill-protected'
@@ -1147,8 +1161,8 @@ export default function Workspace({
                         ? 'NOT CONNECTED'
                         : !live && snapshot
                           ? 'COMPANION OFFLINE'
-                          : snapshot?.bridge.capture_worker_running &&
-                              (!snapshot.capture.gaps ||
+                          : snapshot?.bridge?.capture_worker_running &&
+                              (!snapshot?.capture?.gaps ||
                                 snapshot.capture.gaps.length === 0) &&
                               snapshot.lease?.status === 'active'
                             ? 'PROTECTED'
@@ -1164,13 +1178,13 @@ export default function Workspace({
                       <span className="agent-badge">
                         {saved.find(
                           (item) =>
-                            item.enrollmentId === snapshot.enrollment.id,
+                            item.enrollmentId === snapshot?.enrollment?.id,
                         )?.label ?? 'Workspace'}
                       </span>
                     </div>
-                    <h3 className="mission-title">{snapshot.policy.mission}</h3>
+                    <h3 className="mission-title">{snapshot?.policy?.mission || 'No active mission'}</h3>
                     <p className="mission-path">
-                      {snapshot.enrollment.workspace}
+                      {snapshot?.enrollment?.workspace || ''}
                     </p>
                     <div className="mission-meta-grid">
                       <div className="meta-item">
@@ -1184,7 +1198,7 @@ export default function Workspace({
                       <div className="meta-item">
                         <span className="meta-label">EXECUTION LEASE</span>
                         <span className="meta-value">
-                          {snapshot.lease
+                          {snapshot?.lease
                             ? `${snapshot.lease.execution_epoch} · ${snapshot.lease.status}`
                             : 'No lease'}
                         </span>
@@ -1192,7 +1206,7 @@ export default function Workspace({
                       <div className="meta-item">
                         <span className="meta-label">CAPTURE WORKER</span>
                         <span className="meta-value">
-                          {snapshot.bridge.capture_worker_running
+                          {snapshot?.bridge?.capture_worker_running
                             ? 'Watching'
                             : 'Stopped'}
                         </span>
@@ -1222,12 +1236,12 @@ export default function Workspace({
                     </div>
                     <div className="matrix-val">
                       {snapshot
-                        ? `${snapshot.checkpoints.length} Checkpoints`
+                        ? `${(snapshot.checkpoints ?? []).length} Checkpoints`
                         : '0 Checkpoints'}
                     </div>
                     <p className="matrix-sub">
                       {snapshot
-                        ? `Latest: ${when(snapshot.recovery_window.last_checkpoint_at)}`
+                        ? `Latest: ${when(snapshot.recovery_window?.last_checkpoint_at)}`
                         : 'No capture history received'}
                     </p>
                   </div>
@@ -1238,14 +1252,14 @@ export default function Workspace({
                       <span>RECOVERY READINESS</span>
                     </div>
                     <div className="matrix-val">
-                      {snapshot?.policy.recovery_allowed
+                      {snapshot?.policy?.recovery_allowed
                         ? 'Standby Ready'
                         : 'Review Required'}
                     </div>
                     <p className="matrix-sub">
                       Verified backup:{' '}
                       {when(
-                        snapshot?.recovery_window.last_verified_backup
+                        snapshot?.recovery_window?.last_verified_backup
                           ?.created_at,
                       ) || 'None'}
                     </p>
@@ -1304,18 +1318,18 @@ export default function Workspace({
                       <h2>
                         {saved.find(
                           (item) =>
-                            item.enrollmentId === snapshot.enrollment.id,
+                            item.enrollmentId === snapshot?.enrollment?.id,
                         )?.label ?? 'Connected agent'}
                       </h2>
                       <span className="pill">
-                        Capture {snapshot.capture.state}
+                        Capture {snapshot?.capture?.state || 'unknown'}
                       </span>
                     </div>
                     <div className="panel-body">
                       <p className="eyebrow">CURRENT MISSION</p>
-                      <h2 className="mission">{snapshot.policy.mission}</h2>
+                      <h2 className="mission">{snapshot?.policy?.mission || 'No active mission'}</h2>
                       <p className="path-text">
-                        {snapshot.enrollment.workspace}
+                        {snapshot?.enrollment?.workspace || ''}
                       </p>
                       <dl className="facts">
                         <div>
@@ -1327,7 +1341,7 @@ export default function Workspace({
                         <div>
                           <dt>Execution</dt>
                           <dd>
-                            {snapshot.lease
+                            {snapshot?.lease
                               ? `${snapshot.lease.execution_epoch} · ${snapshot.lease.status}${snapshot.lease_stale && snapshot.lease.status === 'active' ? ' · heartbeat expired' : ''}`
                               : 'No run started'}
                           </dd>
@@ -1335,14 +1349,14 @@ export default function Workspace({
                         <div>
                           <dt>Background capture</dt>
                           <dd>
-                            {snapshot.bridge.capture_worker_running
+                            {snapshot?.bridge?.capture_worker_running
                               ? 'Running in companion'
                               : 'Not running'}
                           </dd>
                         </div>
                         <div>
                           <dt>Observed activity</dt>
-                          <dd>{when(snapshot.capture.last_observation)}</dd>
+                          <dd>{when(snapshot?.capture?.last_observation)}</dd>
                         </div>
                         <div>
                           <dt>Tasks completed</dt>
@@ -1357,21 +1371,21 @@ export default function Workspace({
                         </div>
                         <div>
                           <dt>Connection expires</dt>
-                          <dd>{when(snapshot.bridge.expires_at)}</dd>
+                          <dd>{when(snapshot?.bridge?.expires_at)}</dd>
                         </div>
                       </dl>
-                      {snapshot.bridge.worker_error && (
+                      {snapshot?.bridge?.worker_error && (
                         <div className="notice error">
                           Capture worker stopped: {snapshot.bridge.worker_error}
                           . Inspect the local companion before restarting.
                         </div>
                       )}
-                      {!!snapshot.capture.gaps.length && (
+                      {!!(snapshot?.capture?.gaps?.length) && (
                         <div className="notice error">
                           <div>
                             <strong>Capture requires attention</strong>
                             <ul>
-                              {snapshot.capture.gaps.map((gap) => (
+                              {(snapshot?.capture?.gaps ?? []).map((gap) => (
                                 <li key={gap}>{gap}</li>
                               ))}
                             </ul>
@@ -1379,7 +1393,7 @@ export default function Workspace({
                         </div>
                       )}
                       <div className="button-row wrap">
-                        {!snapshot.lease ||
+                        {!snapshot?.lease ||
                         snapshot.lease.status === 'closed' ? (
                           <Button
                             disabled={!mutate}
@@ -1392,7 +1406,7 @@ export default function Workspace({
                             <Button
                               disabled={
                                 !active ||
-                                snapshot.bridge.capture_worker_running
+                                !!snapshot?.bridge?.capture_worker_running
                               }
                               onClick={() => openAction('keep-capturing')}
                             >
@@ -1426,23 +1440,23 @@ export default function Workspace({
                   </section>
                   <aside className="panel policy-panel">
                     <p className="eyebrow">
-                      OWNER POLICY · {snapshot.policy.revision}
+                      OWNER POLICY · {snapshot?.policy?.revision}
                     </p>
                     <h2>Your approved boundaries</h2>
                     <ul>
-                      {snapshot.policy.restrictions.map((r, i) => (
+                      {(snapshot?.policy?.restrictions ?? []).map((r, i) => (
                         <li key={i}>{r}</li>
                       ))}
                     </ul>
                     <p>
                       Recovery{' '}
-                      {snapshot.policy.recovery_allowed
+                      {snapshot?.policy?.recovery_allowed
                         ? 'allowed after review'
                         : 'disabled'}
                     </p>
                     <p>
                       Models:{' '}
-                      {snapshot.policy.allowed_models.join(', ') ||
+                      {(snapshot?.policy?.allowed_models ?? []).join(', ') ||
                         'None approved'}
                     </p>
                     <div className="stack">
@@ -1462,7 +1476,7 @@ export default function Workspace({
                       </Button>
                       <Button
                         variant="outline"
-                        disabled={!mutate || !snapshot.capture.gaps.length}
+                        disabled={!mutate || !snapshot?.capture?.gaps?.length}
                         onClick={() => openAction('repair-capture')}
                       >
                         Record capture repair
@@ -1550,7 +1564,7 @@ export default function Workspace({
                         <div>
                           <strong>{item.label}</strong>
                           <p>
-                            {snapshot?.enrollment.id === item.enrollmentId &&
+                            {snapshot?.enrollment?.id === item.enrollmentId &&
                             live
                               ? 'Connected now'
                               : 'Offline · reconnect with this paired browser'}
@@ -1688,7 +1702,7 @@ export default function Workspace({
                         value={selectedRun}
                         onChange={(event) => setTaskRun(event.target.value)}
                       >
-                        {snapshot.runs.map((run) => (
+                        {(snapshot?.runs ?? []).map((run) => (
                           <NativeSelectOption key={run.id} value={run.id}>
                             Execution {run.execution_epoch} · {run.status}
                           </NativeSelectOption>
@@ -1750,8 +1764,8 @@ export default function Workspace({
                                   : 'Not independently verified'}
                               </small>
                               <small>
-                                {task.dependencies.length
-                                  ? `Requires: ${task.dependencies.join(', ')}`
+                                {(task.dependencies ?? []).length
+                                  ? `Requires: ${(task.dependencies ?? []).join(', ')}`
                                   : 'No dependencies'}
                               </small>
                             </TableCell>
@@ -1760,7 +1774,7 @@ export default function Workspace({
                                 variant="outline"
                                 disabled={
                                   !active ||
-                                  task.run_id !== snapshot.lease?.holder_run_id
+                                  task.run_id !== snapshot?.lease?.holder_run_id
                                 }
                                 onClick={() => editTask(task)}
                               >
@@ -1857,10 +1871,10 @@ export default function Workspace({
                     <h2>Observed operations</h2>
                     <span className="muted">Selected run</span>
                   </div>
-                  {snapshot.operations.filter((op) => op.run_id === selectedRun)
+                  {(snapshot.operations ?? []).filter((op) => op.run_id === selectedRun)
                     .length ? (
                     <div className="card-list">
-                      {snapshot.operations
+                      {(snapshot.operations ?? [])
                         .filter((op) => op.run_id === selectedRun)
                         .map((op) => (
                           <article key={op.id}>
@@ -1936,7 +1950,7 @@ export default function Workspace({
                     Capture checkpoint
                   </Button>
                 </div>
-                {snapshot.checkpoints.length ? (
+                {(snapshot.checkpoints ?? []).length ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1949,7 +1963,7 @@ export default function Workspace({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {[...snapshot.checkpoints]
+                      {[...(snapshot.checkpoints ?? [])]
                         .sort((a, b) => b.created_at - a.created_at)
                         .map((cp) => (
                           <TableRow key={cp.id}>
@@ -1960,16 +1974,16 @@ export default function Workspace({
                             <TableCell>
                               {short(cp.run_id)}
                               <small>
-                                {cp.capture_seconds.toFixed(2)}s capture
+                                {(Number(cp.capture_seconds) || 0).toFixed(2)}s capture
                               </small>
                             </TableCell>
                             <TableCell>
                               <span className="pill">
-                                {cp.capture.blockers.length
+                                {(cp.capture?.blockers ?? []).length
                                   ? 'Inspection only'
                                   : 'No recorded capture blockers'}
                               </span>
-                              {cp.capture.blockers.map((blocker) => (
+                              {(cp.capture?.blockers ?? []).map((blocker) => (
                                 <small key={blocker}>{blocker}</small>
                               ))}
                             </TableCell>
@@ -2023,9 +2037,9 @@ export default function Workspace({
                     <ArrowRight size={16} />
                   </Button>
                 </div>
-                {snapshot.recoveries.length ? (
+                {(snapshot.recoveries ?? []).length ? (
                   <div className="card-list">
-                    {snapshot.recoveries.map((recovery) => (
+                    {(snapshot.recoveries ?? []).map((recovery) => (
                       <article key={recovery.id}>
                         <div className="button-row spread">
                           <h3>Destination: {recovery.destination_session}</h3>
@@ -2035,13 +2049,13 @@ export default function Workspace({
                         </div>
                         <p>
                           Checkpoint {short(recovery.checkpoint_id)} · Policy{' '}
-                          {recovery.preflight.policy_revision} · Execution{' '}
-                          {recovery.preflight.expected_epoch}
+                          {recovery.preflight?.policy_revision ?? 'N/A'} · Execution{' '}
+                          {recovery.preflight?.expected_epoch ?? 'N/A'}
                         </p>
-                        {recovery.preflight.blockers.length > 0 && (
+                        {Boolean(recovery.preflight?.blockers?.length) && (
                           <div className="notice error">
                             <ul>
-                              {recovery.preflight.blockers.map((blocker) => (
+                              {(recovery.preflight?.blockers ?? []).map((blocker) => (
                                 <li key={blocker}>{blocker}</li>
                               ))}
                             </ul>
@@ -2626,8 +2640,8 @@ export default function Workspace({
                             if (modelSearch.trim()) {
                               const q = modelSearch.toLowerCase();
                               if (
-                                !model.name.toLowerCase().includes(q) &&
-                                !model.id.toLowerCase().includes(q) &&
+                                !(model.name || '').toLowerCase().includes(q) &&
+                                !(model.id || '').toLowerCase().includes(q) &&
                                 !(model.description || '').toLowerCase().includes(q)
                               ) {
                                 return false;

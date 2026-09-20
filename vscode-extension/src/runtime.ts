@@ -13,6 +13,16 @@ export class RuntimeManager {
             const value = JSON.parse(await fs.readFile(path.join(this.context.globalStorageUri.fsPath, 'runtime.json'), 'utf8')) as RuntimeRecord;
             const relative = path.relative(path.join(this.context.globalStorageUri.fsPath, 'runtimes'), value.python);
             if (value.schema !== 1 || !value.healthy || relative.startsWith('..') || path.isAbsolute(relative) || !(await fs.stat(value.python)).isFile()) { return undefined; }
+            if (process.platform === 'win32' && value.python.toLowerCase().endsWith('python.exe')) {
+                const w = value.python.slice(0, -4) + 'w.exe';
+                try {
+                    if ((await fs.stat(w)).isFile()) {
+                        value.python = w;
+                    }
+                } catch {
+                    /* keep original if pythonw.exe is not found */
+                }
+            }
             return value;
         } catch { return undefined; }
     }

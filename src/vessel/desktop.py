@@ -93,8 +93,13 @@ def launch(state, *, timeout=20):
         return {**current, "status": "already_running"}
     (state / STOP).unlink(missing_ok=True)
     flags = (subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0
+    python_bin = profile["python"]
+    if os.name == "nt":
+        w_bin = Path(python_bin).with_name("pythonw.exe")
+        if w_bin.is_file():
+            python_bin = str(w_bin)
     process = subprocess.Popen(
-        [profile["python"], "-m", "vessel.desktop", "--state", str(state)],
+        [python_bin, "-m", "vessel.desktop", "--state", str(state)],
         cwd=state,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

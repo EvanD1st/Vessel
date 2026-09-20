@@ -78,7 +78,12 @@ def main():
         run([str(python), "-I", "-c", "import vessel.extension_api"])
         active = storage / "runtime.json"
         previous = json.loads(active.read_text()) if active.exists() else None
-        result = {"schema": 1, "generation": generation, "python": str(python),
+        target_python = python
+        if os.name == "nt":
+            pythonw = target / "Scripts/pythonw.exe"
+            if pythonw.is_file():
+                target_python = pythonw
+        result = {"schema": 1, "generation": generation, "python": str(target_python),
                   "python_version": platform.python_version(), "version": manifest["version"], "healthy": True}
         if previous and previous.get("generation") != generation:
             (storage / "runtime-previous.json").write_text(json.dumps(previous))

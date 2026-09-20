@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import * as fs from 'fs';
 
 export class LocalError extends Error {
     constructor(public readonly code: string, message: string) { super(message); }
@@ -14,8 +15,19 @@ export function escapeHtml(value: unknown): string {
 export function runProcess(executable: string, args: string[], options: {
     input?: string; timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv; maxBytes?: number;
 } = {}): Promise<string> {
+    let resolvedExe = executable;
+    if (process.platform === 'win32' && resolvedExe.toLowerCase().endsWith('python.exe')) {
+        const w = resolvedExe.slice(0, -4) + 'w.exe';
+        try {
+            if (fs.existsSync(w)) {
+                resolvedExe = w;
+            }
+        } catch {
+            /* Keep original executable if check fails */
+        }
+    }
     return new Promise((resolve, reject) => {
-        const child = spawn(executable, args, {
+        const child = spawn(resolvedExe, args, {
             shell: false, windowsHide: true, cwd: options.cwd,
             env: { ...process.env, PYTHONUTF8: '1', PYTHONNOUSERSITE: '1', ...options.env },
             stdio: ['pipe', 'pipe', 'pipe']

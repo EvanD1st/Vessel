@@ -434,7 +434,14 @@ def dispatch(request):
             record = json.loads(_regular_file(path, 131072))
             record["companion_instance"] = result["instance"]
             write_json(path, record)
-        return {"running": True, "status": result["status"], "port": result["port"]}
+        return {
+            "running": True,
+            "status": result["status"],
+            "port": result["port"],
+            "connect_url": result.get("connect_url"),
+            "token": result.get("token"),
+            "instance": result.get("instance"),
+        }
     if action == "stop-companion":
         return desktop.stop(state)
     if action == "connection":

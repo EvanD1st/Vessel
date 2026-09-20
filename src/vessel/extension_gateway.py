@@ -90,7 +90,12 @@ def launch(state, key=None, *, timeout=20):
         raise ValueError("Stop the previous gateway before changing its configuration")
     (state / "extension-gateway-stop.json").unlink(missing_ok=True)
     env = {**os.environ, KEY_ENV: key}
-    process = subprocess.Popen([sys.executable, "-I", "-m", "vessel.extension_gateway", "--state", str(state)],
+    py_bin = sys.executable
+    if os.name == "nt":
+        w_bin = Path(py_bin).with_name("pythonw.exe")
+        if w_bin.is_file():
+            py_bin = str(w_bin)
+    process = subprocess.Popen([py_bin, "-I", "-m", "vessel.extension_gateway", "--state", str(state)],
                                cwd=state, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0,
                                start_new_session=os.name != "nt")
