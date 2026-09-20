@@ -613,7 +613,7 @@ def create_app(
             if not isinstance(body, dict):
                 return JSONResponse({"error": "Invalid request format"}, status_code=400)
             action = body.get("action")
-            address = str(body.get("address", "")).strip()
+            address = str(body.get("address") or body.get("wallet_address") or "").strip()
         except Exception:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
