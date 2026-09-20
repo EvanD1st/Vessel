@@ -120,22 +120,50 @@ export class Controller implements vscode.Disposable {
         throw new LocalError('key_missing', 'No Orbio key is stored for this project. Use Replace Orbio Key.');
     }
     async collectKey(state: SetupState, cli: PythonCli): Promise<boolean> {
-        const value = await vscode.window.showInputBox({ title: 'Connect Orbio', prompt: 'Enter the key issued by Orbio. It will be encrypted and saved in local VESSEL storage.', password: true, ignoreFocusOut: true,
-            validateInput: input => !input || input.length > 8192 || /\s/.test(input) ? 'Paste only the Orbio key, without spaces or a Bearer prefix.' : undefined });
-        if (!value) { return false; }
-        const approved = await vscode.window.showWarningMessage('Verify this key at api.orbio.so with two small READY-only inference requests, then store it securely? Provider charges may apply. No project content is sent.', { modal: true }, 'Verify and save');
-        if (approved !== 'Verify and save') { return false; }
-        const models = ['openai/gpt-4.1-mini', 'openai/gpt-4o-mini'];
-        const result = await cli.request<{ verified_at: number }>('validate-provider', { key: value, models }, 60000);
-        const version = id();
-        await this.context.secrets.store(secretId(state.workspace, version), value);
-        await cli.request('orbio-migrate-key', { workspace: state.workspace, key: value, credential_version: version, verified_at: result.verified_at }).catch(() => undefined);
-        if (state.credentialVersion && state.credentialVersion !== version) {
-            await this.context.secrets.delete(secretId(state.workspace, state.credentialVersion)).then(undefined, () => undefined);
+        while (true) {
+            const value = await vscode.window.showInputBox({
+                title: 'Connect Inference Provider (Orbio / OpenRouter)',
+                prompt: 'Enter your Orbio (sk-orb-...) or OpenRouter (sk-or-v1-...) API key. Leave blank to skip and configure later.',
+                password: true,
+                ignoreFocusOut: true,
+                validateInput: input => input && (input.length > 8192 || /\s/.test(input)) ? 'Paste only the API key, without spaces or Bearer prefix.' : undefined
+            });
+            if (!value) {
+                state.steps.provider = 'pending';
+                await this.wizard.save(state);
+                return true;
+            }
+            const approved = await vscode.window.showWarningMessage('Verify this key with two small READY-only inference requests, then store it securely? Provider charges may apply. No project content is sent.', { modal: true }, 'Verify and save');
+            if (approved !== 'Verify and save') { return false; }
+            const models = ['openai/gpt-4.1-mini', 'openai/gpt-4o-mini'];
+            try {
+                const result = await cli.request<{ verified_at: number }>('validate-provider', { key: value, models }, 60000);
+                const version = id();
+                await this.context.secrets.store(secretId(state.workspace, version), value);
+                await cli.request('orbio-migrate-key', { workspace: state.workspace, key: value, credential_version: version, verified_at: result.verified_at }).catch(() => undefined);
+                if (state.credentialVersion && state.credentialVersion !== version) {
+                    await this.context.secrets.delete(secretId(state.workspace, state.credentialVersion)).then(undefined, () => undefined);
+                }
+                state.previousCredentialVersion = state.credentialVersion;
+                state.credentialVersion = version; state.verifiedAt = result.verified_at; state.steps.provider = 'passed';
+                await this.wizard.save(state);
+                return true;
+            } catch (err) {
+                const choice = await vscode.window.showErrorMessage(
+                    `Provider verification failed: ${safeError(err)}. Check your key and credits, or configure inference later.`,
+                    'Try another key',
+                    'Skip for now'
+                );
+                if (choice === 'Skip for now') {
+                    state.steps.provider = 'pending';
+                    await this.wizard.save(state);
+                    return true;
+                }
+                if (choice !== 'Try another key') {
+                    return false;
+                }
+            }
         }
-        state.previousCredentialVersion = state.credentialVersion;
-        state.credentialVersion = version; state.verifiedAt = result.verified_at; state.steps.provider = 'passed';
-        await this.wizard.save(state); return true;
     }
     async setup(): Promise<void> {
         let python;
@@ -229,7 +257,11 @@ export class Controller implements vscode.Disposable {
             await cli.request('launch', { workspace, transaction: plan.id }); startedCompanion = !before.companion.running;
             await cli.request('gateway-stop', { workspace });
             await this.setGateway(false);
-            await cli.request('gateway-launch', { workspace, transaction: plan.id, key: await this.key(state) });
+            let launchKey: string | undefined;
+            try { launchKey = await this.key(state); } catch { launchKey = undefined; }
+            if (launchKey) {
+                await cli.request('gateway-launch', { workspace, transaction: plan.id, key: launchKey });
+            }
             state.steps.verify = 'pending'; state.errorCode = undefined; await this.wizard.save(state);
             if (state.previousCredentialVersion) { await this.context.secrets.delete(secretId(workspace, state.previousCredentialVersion)); }
             void vscode.window.showInformationMessage('Local configuration is ready. Enable Cline hooks and reload while Cline is idle, then use Status to bind a real task and verify capture.');

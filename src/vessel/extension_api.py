@@ -309,7 +309,8 @@ async def validate_provider(key, models, *, transport=None):
     # The fixed probe goes through the same bounded inference boundary as production.
     token = uuid.uuid4().hex
     admission = GatewayAdmission("probe", "probe", "owner", "probe", "probe", "default", 1, 1, 1, 1, frozenset(models))
-    app = create_app(routes={"default": UpstreamRoute(gateway.ENDPOINT, key, frozenset(models))},
+    endpoint = gateway.resolve_endpoint(key)
+    app = create_app(routes={"default": UpstreamRoute(endpoint, key, frozenset(models))},
                      authorize=lambda supplied: admission if supplied == token else None,
                      transport=transport, upstream_timeout_seconds=15)
     try:

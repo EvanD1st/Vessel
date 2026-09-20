@@ -23,6 +23,15 @@ MODELS = ("openai/gpt-4.1-mini", "openai/gpt-4o-mini")
 KEY_ENV = "VESSEL_EXTENSION_ORBIO_KEY"
 
 
+def resolve_endpoint(key: str | None) -> str:
+    if key:
+        if key.startswith("sk-or-"):
+            return "https://openrouter.ai/api/v1/chat/completions"
+        if key.startswith("sk-proj-"):
+            return "https://api.openai.com/v1/chat/completions"
+    return ENDPOINT
+
+
 def lock_for(state):
     lock = ArtifactLock(state)
     lock.path = state / "extension-gateway.lock"
@@ -149,7 +158,8 @@ def serve(state):
 
         auto_candidates = tuple(list(dict.fromkeys(config["models"]))[:3])
         profiles = {"vessel-auto": auto_candidates} if "vessel-auto" not in config["models"] else {}
-        app = create_app(routes={"default": UpstreamRoute(ENDPOINT, key, frozenset(config["models"]),
+        endpoint = resolve_endpoint(key)
+        app = create_app(routes={"default": UpstreamRoute(endpoint, key, frozenset(config["models"]),
                           profiles, config["credential_version"])},
                          authorize=authorize, audit=audit)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
