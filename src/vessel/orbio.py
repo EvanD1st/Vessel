@@ -577,9 +577,9 @@ class RealOrbioAdapter:
         analytics = {
             "available": True,
             "usage": round(usage_val, 4),
-            "total_credits": round(total_credits_val, 4) if total_credits_val is not None else None,
-            "remaining_credits": remaining,
-            "percent_used": pct,
+            "total_credits": round(total_credits_val, 4) if total_credits_val is not None else 0.0,
+            "remaining_credits": remaining if remaining is not None else 0.0,
+            "percent_used": pct if pct is not None else 0.0,
             "limit": limit_val,
             "rate_limit": rate_limit_val,
             "is_free_tier": is_free,

@@ -2217,7 +2217,7 @@ export default function Workspace({
                         <div className="quota-stat-main">
                           <span className="quota-sub">Remaining Credits</span>
                           <span className="quota-number" style={{ color: '#00f0b5' }}>
-                            ${orbioUsage?.usage?.remaining_credits !== undefined
+                            ${typeof orbioUsage?.usage?.remaining_credits === 'number'
                               ? orbioUsage.usage.remaining_credits.toFixed(4)
                               : '0.0000'}
                           </span>
@@ -2225,7 +2225,7 @@ export default function Workspace({
                         <div className="quota-stat-main" style={{ textAlign: 'right' }}>
                           <span className="quota-sub">Period Usage</span>
                           <span className="quota-number" style={{ fontSize: 20 }}>
-                            ${orbioUsage?.usage?.usage !== undefined
+                            ${typeof orbioUsage?.usage?.usage === 'number'
                               ? orbioUsage.usage.usage.toFixed(4)
                               : '0.0000'}
                           </span>
@@ -2237,10 +2237,10 @@ export default function Workspace({
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 6, color: 'var(--muted)' }}>
                           <span>Quota Utilization</span>
                           <span>
-                            {orbioUsage?.usage?.percent_used !== undefined
+                            {typeof orbioUsage?.usage?.percent_used === 'number'
                               ? `${orbioUsage.usage.percent_used.toFixed(1)}%`
                               : '0.0%'}
-                            {orbioUsage?.usage?.total_credits ? ` of $${orbioUsage.usage.total_credits.toFixed(2)}` : ''}
+                            {typeof orbioUsage?.usage?.total_credits === 'number' && orbioUsage.usage.total_credits > 0 ? ` of $${orbioUsage.usage.total_credits.toFixed(2)}` : ''}
                           </span>
                         </div>
                         <div className="quota-progress-track">
