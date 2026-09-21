@@ -16,14 +16,21 @@ export function runProcess(executable: string, args: string[], options: {
     input?: string; timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv; maxBytes?: number;
 } = {}): Promise<string> {
     let resolvedExe = executable;
-    if (process.platform === 'win32' && resolvedExe.toLowerCase().endsWith('python.exe')) {
-        const w = resolvedExe.slice(0, -4) + 'w.exe';
-        try {
-            if (fs.existsSync(w)) {
-                resolvedExe = w;
+    if (process.platform === 'win32') {
+        const lower = resolvedExe.toLowerCase();
+        if (lower === 'py' || lower === 'py.exe') {
+            resolvedExe = 'pyw.exe';
+        } else if (lower === 'python' || lower === 'python.exe') {
+            resolvedExe = 'pythonw.exe';
+        } else if (lower.endsWith('python.exe')) {
+            const w = resolvedExe.slice(0, -4) + 'w.exe';
+            try {
+                if (fs.existsSync(w)) {
+                    resolvedExe = w;
+                }
+            } catch {
+                /* Keep original executable if check fails */
             }
-        } catch {
-            /* Keep original executable if check fails */
         }
     }
     return new Promise((resolve, reject) => {

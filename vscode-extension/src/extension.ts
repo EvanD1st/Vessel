@@ -159,9 +159,10 @@ export class Controller implements vscode.Disposable {
                     await this.wizard.save(state);
                     return true;
                 }
-                if (choice !== 'Try another key') {
-                    return false;
+                if (choice === 'Try another key') {
+                    continue;
                 }
+                throw err;
             }
         }
     }

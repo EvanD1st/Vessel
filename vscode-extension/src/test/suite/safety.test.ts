@@ -87,9 +87,9 @@ suite('Safety boundaries', () => {
         const context = { globalState: { get: () => undefined, update: async (_key: string, value: unknown) => { saved.push(value); } },
             secrets: { store: async (_key: string, value: string) => { secrets.push(value); } } } as unknown as vscode.ExtensionContext;
         const app = new Controller(context);
-        const input = vscode.window.showInputBox, warning = vscode.window.showWarningMessage;
+        const input = vscode.window.showInputBox, warning = vscode.window.showWarningMessage, error = vscode.window.showErrorMessage;
         try {
-            Object.assign(vscode.window, { showInputBox: async () => 'test-only-private-key', showWarningMessage: async () => 'Verify and save' });
+            Object.assign(vscode.window, { showInputBox: async () => 'test-only-private-key', showWarningMessage: async () => 'Verify and save', showErrorMessage: async () => undefined });
             const state = initialState('workspace');
             const cli = { request: async () => { throw new Error('provider failed'); } } as unknown as PythonCli;
             await assert.rejects(app.collectKey(state, cli));
@@ -102,6 +102,6 @@ suite('Safety boundaries', () => {
             assert.equal(state.credentialVersion !== undefined, true);
             Object.assign(vscode.window, { showWarningMessage: async () => undefined });
             assert.equal(await app.collectKey(state, valid), false);
-        } finally { Object.assign(vscode.window, { showInputBox: input, showWarningMessage: warning }); app.dispose(); }
+        } finally { Object.assign(vscode.window, { showInputBox: input, showWarningMessage: warning, showErrorMessage: error }); app.dispose(); }
     });
 });

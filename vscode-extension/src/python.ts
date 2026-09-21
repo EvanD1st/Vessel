@@ -18,7 +18,7 @@ export async function parsePython(output: string): Promise<PythonInfo> {
 }
 
 export async function detectPython(): Promise<PythonInfo> {
-    const candidates = process.platform === 'win32' ? [['py', '-3.11'], ['py', '-3.12'], ['py', '-3.13'], ['py', '-3.14'], ['python']] : [['python3']];
+    const candidates = process.platform === 'win32' ? [['pyw', '-3.11'], ['pyw', '-3.12'], ['pyw', '-3.13'], ['pyw', '-3.14'], ['pythonw'], ['py', '-3.11'], ['py', '-3.12'], ['py', '-3.13'], ['py', '-3.14'], ['python']] : [['python3']];
     const script = 'import sys,json,platform; print(json.dumps({"executable":sys.executable,"version":".".join(map(str,sys.version_info[:3])),"arch":platform.machine()}))';
     for (const [executable, ...prefix] of candidates) {
         try { return await parsePython(await runProcess(executable, [...prefix, '-I', '-c', script], { timeout: 5000, maxBytes: 65536 })); }

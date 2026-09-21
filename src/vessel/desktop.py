@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import threading
@@ -90,14 +91,24 @@ def launch(state, *, timeout=20):
     if current["running"]:
         if any(current.get(key) != profile[key] for key in ("origin", "port", "ttl", "python")):
             raise ValueError("A companion with different settings is running. Stop it before launching again")
-        return {**current, "status": "already_running"}
+        conn = {}
+        try:
+            conn = connection(state)
+        except Exception:
+            pass
+        return {**current, "status": "already_running", "connect_url": conn.get("connect_url")}
     (state / STOP).unlink(missing_ok=True)
     flags = (subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0
     python_bin = profile["python"]
     if os.name == "nt":
-        w_bin = Path(python_bin).with_name("pythonw.exe")
+        full = shutil.which(python_bin) or python_bin
+        w_bin = Path(full).with_name("pythonw.exe")
         if w_bin.is_file():
             python_bin = str(w_bin)
+        else:
+            w_which = shutil.which("pythonw.exe") or shutil.which("pythonw")
+            if w_which:
+                python_bin = w_which
     process = subprocess.Popen(
         [python_bin, "-m", "vessel.desktop", "--state", str(state)],
         cwd=state,

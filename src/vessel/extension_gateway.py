@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -92,9 +93,14 @@ def launch(state, key=None, *, timeout=20):
     env = {**os.environ, KEY_ENV: key}
     py_bin = sys.executable
     if os.name == "nt":
-        w_bin = Path(py_bin).with_name("pythonw.exe")
+        full = shutil.which(py_bin) or py_bin
+        w_bin = Path(full).with_name("pythonw.exe")
         if w_bin.is_file():
             py_bin = str(w_bin)
+        else:
+            w_which = shutil.which("pythonw.exe") or shutil.which("pythonw")
+            if w_which:
+                py_bin = w_which
     process = subprocess.Popen([py_bin, "-I", "-m", "vessel.extension_gateway", "--state", str(state)],
                                cwd=state, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0,

@@ -318,32 +318,6 @@ export default function Workspace({
     }, 3 * 60 * 1000);
     return () => clearInterval(interval);
   }, [session, loadOrbioUsage]);
-  useEffect(() => {
-    let cancelled = false;
-    const origin = window.location.origin;
-    let connection = '';
-    if (window.location.hash.startsWith('#connect=')) {
-      connection = window.location.hash.slice(1);
-      window.history.replaceState(
-        null,
-        '',
-        window.location.pathname + window.location.search,
-      );
-    }
-    // Import browser-only connection state after hydration, and immediately
-    // remove its private fragment from the current history entry.
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setOrigin(origin);
-      if (connection) {
-        setLink(connection);
-        setConnecting(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   const loadSaved = useCallback(async () => {
     await Promise.resolve();
     if (!signedIn) {
@@ -370,6 +344,69 @@ export default function Workspace({
       setSavedLoading(false);
     }
   }, [signedIn]);
+  useEffect(() => {
+    let cancelled = false;
+    let origin = '';
+    let connection = '';
+    try {
+      if (typeof window !== 'undefined') {
+        origin = window.location.origin;
+        if (window.location.hash && window.location.hash.startsWith('#connect=')) {
+          connection = window.location.hash.slice(1);
+          try {
+            window.history.replaceState(
+              null,
+              '',
+              window.location.pathname + window.location.search,
+            );
+          } catch {
+            /* ignore history sandboxing */
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (origin) setOrigin(origin);
+
+      if (connection) {
+        if (signedIn) {
+          void (async () => {
+            try {
+              const paired = await pairCompanion(connectionLink(connection), 'VS Code Companion');
+              if (cancelled) return;
+              savePairing(accountStorage(localStorage, accountId), paired.pairing);
+              acceptConnection(paired);
+              setMessage(`Paired automatically with companion on port ${paired.session.port}.`);
+              void fetch('/api/connections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  enrollmentId: paired.pairing.enrollmentId,
+                  label: 'VS Code Companion',
+                  port: paired.session.port,
+                }),
+              }).then(() => void loadSaved());
+            } catch {
+              if (!cancelled) {
+                setLink(connection);
+                setConnecting(true);
+              }
+            }
+          })();
+        } else {
+          setLink(connection);
+          setConnecting(true);
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, accountId, acceptConnection, loadSaved]);
 
   const operatorProfile = {
     id: user?.userId || accountId || 'usr_operator',
@@ -1152,7 +1189,9 @@ export default function Workspace({
                                 snapshot.capture.gaps.length === 0) &&
                               snapshot.lease?.status === 'active'
                             ? 'pill-protected'
-                            : 'pill-warning'
+                            : live && (snapshot?.enrollment || session)
+                              ? 'pill-protected'
+                              : 'pill-warning'
                     }`}
                   >
                     <span className="badge-dot" />
@@ -1166,7 +1205,9 @@ export default function Workspace({
                                 snapshot.capture.gaps.length === 0) &&
                               snapshot.lease?.status === 'active'
                             ? 'PROTECTED'
-                            : 'SETUP REQUIRED'}
+                            : live && (snapshot?.enrollment || session)
+                              ? 'CONNECTED'
+                              : 'SETUP REQUIRED'}
                     </span>
                   </div>
                 </div>
