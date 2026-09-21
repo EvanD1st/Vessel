@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any
 
-MAX_TEXT_CHARS = 16384
+MAX_TEXT_CHARS = 65536
 _SECRET_KEY = re.compile(
     r"(?i)(?:password|passwd|api[_-]?key|(?:^|_)token(?:$|_)|access[_-]?token|refresh[_-]?token|authorization|private[_-]?key|secret|seed[_-]?phrase)"
 )

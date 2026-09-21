@@ -185,13 +185,27 @@ def inspect(client, workspace, state_dir):
         raise ValueError("mcpServers must be an object; original file preserved")
     mcp_ok = servers.get(manifest["server_name"]) == manifest["entry"]
     missing = []
+    entry_cmd = manifest.get("entry", {}).get("command")
+    canonical_wrapper = _wrapper(entry_cmd, state_dir, workspace) if entry_cmd else None
+    canonical_hash = hashlib.sha256(canonical_wrapper).hexdigest() if canonical_wrapper else None
+
+    def _norm(b: bytes) -> str:
+        return b.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("/", "\\").strip()
+
+    norm_canonical = _norm(canonical_wrapper) if canonical_wrapper else None
+
     for relative, expected in manifest["hooks"].items():
         path = workspace / relative
         if not path.resolve().is_relative_to(workspace):
             raise ValueError("Hook scope changed")
         try:
             safe_directory(path.parent)
-            valid = hashlib.sha256(_regular_file(path, 16384)).hexdigest() == expected
+            raw = _regular_file(path, 16384)
+            current_hash = hashlib.sha256(raw).hexdigest()
+            valid = current_hash == expected
+            if not valid and canonical_hash:
+                if current_hash == canonical_hash or (norm_canonical and _norm(raw) == norm_canonical):
+                    valid = True
         except (OSError, ValueError):
             valid = False
         if not valid:

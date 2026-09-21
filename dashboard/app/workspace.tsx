@@ -1424,12 +1424,28 @@ export default function Workspace({
                       {!!(snapshot?.capture?.gaps?.length) && (
                         <div className="notice error">
                           <div>
-                            <strong>Capture requires attention</strong>
-                            <ul>
-                              {(snapshot?.capture?.gaps ?? []).map((gap) => (
-                                <li key={gap}>{gap}</li>
-                              ))}
+                            <strong>Capture notice</strong>
+                            <ul style={{ margin: '4px 0 8px 16px' }}>
+                              {(snapshot?.capture?.gaps ?? []).map((gap) => {
+                                const labels: Record<string, string> = {
+                                  text_truncated: 'Large agent or tool output exceeded safety limit and was bounded to preserve memory.',
+                                  cline_configuration_missing_or_changed: 'Cline hooks or configuration were adjusted or resynchronized.',
+                                  conflicting_delivery: 'Duplicate event delivery was safely ignored.',
+                                  unbound_native_tool_activity: 'Agent tool activity was observed outside an active bound mission.',
+                                  native_activity_after_attested_stop: 'Activity was observed while the mission was paused.',
+                                  old_run_native_activity_after_handover: 'Activity observed from a previous session after handover.',
+                                };
+                                return <li key={gap}>{labels[gap] || gap.replace(/_/g, ' ')}</li>;
+                              })}
                             </ul>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openAction('repair-capture')}
+                              style={{ height: 26, fontSize: 12, padding: '0 10px' }}
+                            >
+                              Acknowledge &amp; Clear Notice
+                            </Button>
                           </div>
                         </div>
                       )}
