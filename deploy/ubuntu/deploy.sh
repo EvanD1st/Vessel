@@ -82,4 +82,17 @@ EOF
   fi
   systemctl reload caddy.service
 fi
+# Existing VESSEL Caddy installations serve downloads from a separate
+# directory ahead of the application proxy. Keep that file in step with the
+# VSIX tested and packaged in this release.
+if grep -Fq 'handle /downloads/*' /etc/caddy/Caddyfile &&
+   grep -Fq 'root * /var/www/vessel' /etc/caddy/Caddyfile; then
+  install -d -o root -g root -m 0755 /var/www/vessel/downloads
+  staged_download=/var/www/vessel/downloads/.vessel-${release}.vsix
+  install -o root -g root -m 0644 "$target/public/downloads/vessel.vsix" "$staged_download"
+  mv -f "$staged_download" /var/www/vessel/downloads/vessel.vsix
+  cmp -s "$target/public/downloads/vessel.vsix" /var/www/vessel/downloads/vessel.vsix || {
+    echo 'Public VSIX does not match the tested release' >&2; exit 1;
+  }
+fi
 echo "VESSEL dashboard release $release healthy; AttendX configuration retained."
