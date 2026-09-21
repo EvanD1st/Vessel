@@ -185,7 +185,7 @@
     "compile": "tsc -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "lint": "oxlint src --deny-warnings",
-    "package:vsix": "vsce package --no-dependencies --out vessel-companion-0.3.3.vsix",
+    "package:vsix": "vsce package --no-dependencies --out vessel-companion-0.3.4.vsix",
     "publish:marketplace": "vsce publish",
     "test:package": "node scripts/verify-package.cjs",
     "watch": "tsc -watch -p ./",
