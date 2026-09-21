@@ -60,7 +60,7 @@ export default function SetupGuide() {
             <h1 id="setup-title">Keep your work within reach.</h1>
             <p>This is an educational preview. Installation and setup happen in VS Code; viewing this page changes nothing on your computer.</p>
             <p className="setup-guide-subtext">
-              Install the local VESSEL VSIX, then choose <strong>Set up VESSEL</strong>. The current preview supports Windows x64, Python 3.11–3.14, and the verified Cline 4.1.17 bundle.
+              Install the local VESSEL VSIX, then choose <strong>Set up VESSEL</strong>. The current preview supports Windows x64, Python 3.11–3.14, and verified Cline 4.1.17 and 4.1.19 bundles.
             </p>
           </div>
 
@@ -83,11 +83,11 @@ export default function SetupGuide() {
           <div className="setup-guide-footer web3-guide-footer">
             <a
               href="/downloads/vessel.vsix"
-              download="vessel-companion-0.3.2.vsix"
+              download="vessel-companion-0.3.5.vsix"
               className="primary-action web3-submit-btn text-center block mb-3 text-decoration-none"
             >
               <span className="btn-state">
-                DOWNLOAD VESSEL VSIX (v0.3.2) ↓
+                DOWNLOAD VESSEL VSIX (v0.3.5) ↓
               </span>
             </a>
             <p id="marketplace-note">Download the .vsix package and install in VS Code via <code>Extensions &gt; ... &gt; Install from VSIX...</code></p>

@@ -54,6 +54,8 @@ try {
   const password = /^Temporary password: (.*)$/m.exec(login)?.[1];
   if (!email || !password) throw new Error('Owner fixture unavailable');
   await start();
+  const download = await fetch(base + '/downloads/vessel.vsix', { method: 'HEAD' });
+  if (!download.ok) throw new Error('Standalone public download was not served');
   const invalidSignup = await fetch(base + '/api/register', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: '{}' });
   if (invalidSignup.status !== 400) throw new Error('Invalid signup was not rejected');
   const validSignup = await fetch(base + '/api/register', { method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Smoke User', email: 'smoke@example.invalid', password: 'ValidPassword123!' }) });
@@ -66,9 +68,41 @@ try {
   if (!cookie) throw new Error('Session cookie missing');
   const account = await fetch(base + '/api/session', { headers: { ...proxyHeaders, cookie } });
   if ((await account.json()).user?.email !== email) throw new Error('Owner session was not restored');
+  const smokeLogin = await fetch(base + '/api/session', {
+    method: 'POST', headers: { ...proxyHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'smoke@example.invalid', password: 'ValidPassword123!' }),
+  });
+  if (!smokeLogin.ok) throw new Error('Registered user could not sign in');
+  const smokeCookie = smokeLogin.headers.get('set-cookie')?.split(';')[0];
+  if (!smokeCookie) throw new Error('Registered user session cookie missing');
+  const saved = await fetch(base + '/api/connections', {
+    method: 'POST', headers: { ...proxyHeaders, cookie: smokeCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ enrollmentId: 'enrollment_smoke', label: 'Smoke companion', port: 8765 }),
+  });
+  const saveResult = await saved.json();
+  if (!saved.ok || !saveResult.saved) throw new Error(`Connection label was not saved (${saved.status}: ${saveResult.error})`);
+  const connections = await fetch(base + '/api/connections', { headers: { ...proxyHeaders, cookie: smokeCookie } });
+  if (!(await connections.json()).connections?.some(item => item.enrollmentId === 'enrollment_smoke')) {
+    throw new Error('Saved connection list did not include the new label');
+  }
+  const resetBody = JSON.stringify({ email });
+  const resetHeaders = { ...proxyHeaders, 'content-type': 'application/json', 'cf-connecting-ip': '127.0.0.9' };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(base + '/api/forgot-password', { method: 'POST', headers: resetHeaders, body: resetBody });
+    if (!response.ok) throw new Error('Password reset request failed');
+  }
+  const resetToken = () => {
+    const code = "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute(\"SELECT identifier FROM verification WHERE identifier LIKE 'reset-password:%'\").fetchone()[0])";
+    const result = spawnSync(python, [...prefix, '-c', code, database], { encoding: 'utf8', timeout: 10000 });
+    if (result.status !== 0) throw new Error('Could not inspect reset token fixture');
+    return result.stdout.trim();
+  };
+  const beforeLimit = resetToken();
+  const limited = await fetch(base + '/api/forgot-password', { method: 'POST', headers: resetHeaders, body: resetBody });
+  if (!limited.ok || resetToken() !== beforeLimit) throw new Error('Reset limit replaced an existing token');
   await stop();
   await start();
   const restored = await fetch(base + '/api/session', { headers: { ...proxyHeaders, cookie } });
   if ((await restored.json()).user?.email !== email) throw new Error('Session did not persist across restart');
-  console.log('Self-host smoke passed: migrations, self-registration, proxied HTTPS login, session restart');
+  console.log('Self-host smoke passed: migrations, signup, login, connections, reset limit, session restart');
 } finally { await stop(); await rm(privateDir, { recursive: true, force: true }); }

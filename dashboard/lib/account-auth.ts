@@ -58,7 +58,6 @@ export function createAccountAuth(
             console.error('[VESSEL AUTH] Failed to send reset email via Resend:', err);
           }
         }
-        console.log(`[VESSEL AUTH] Password reset link for ${user.email}: ${url}`);
       },
     },
     emailVerification: {

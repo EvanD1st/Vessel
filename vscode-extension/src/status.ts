@@ -18,7 +18,7 @@ export function protectionState(snapshot?: Snapshot, compatibility?: Compatibili
 
 export function diagnostics(state: SetupState | undefined, snapshot: Snapshot | undefined, compatibility: Compatibility | undefined,
     pythonVersion?: string) {
-    return { schema: 1, extensionVersion: '0.3.2', packageVersion: '0.5.0', vscodeVersion: vscode.version,
+    return { schema: 1, extensionVersion: '0.3.5', packageVersion: '0.5.1', vscodeVersion: vscode.version,
         platform: process.platform, architecture: process.arch, pythonVersion: pythonVersion ?? 'unknown', pythonLocation: 'extension-managed',
         clineVersion: compatibility?.version ?? 'missing', clineMode: compatibility?.mode ?? 'unknown',
         clineBundleHash: compatibility?.bundle_sha256 ?? null, steps: state?.steps ?? {},

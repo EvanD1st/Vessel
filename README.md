@@ -1,6 +1,6 @@
 # VESSEL — continuity for VS Code + Cline
 
-Version **0.5.0**, local developer preview. The [VS Code extension](vscode-extension/README.md) provides a reviewed setup and recovery flow for the verified Cline 4.1.17 Windows bundle. VESSEL records an enrolled project's
+Version **0.5.1**, local developer preview. The [VS Code extension](vscode-extension/README.md) provides a reviewed setup and recovery flow for verified Cline 4.1.17 and 4.1.19 Windows bundles. VESSEL records an enrolled project's
 work, saves encrypted checkpoints, and prepares a reviewed handover to a fresh
 Cline task. Users code in **VS Code with Cline** and inspect continuity through
 the owner CLI or the browser dashboard. Cline is the only active editor adapter;

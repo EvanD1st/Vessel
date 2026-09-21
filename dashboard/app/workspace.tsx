@@ -223,6 +223,7 @@ export default function Workspace({
     [walletInput, setWalletInput] = useState(''),
     [walletSaving, setWalletSaving] = useState(false);
   const [modelsCatalog, setModelsCatalog] = useState<OrbioModel[]>([]),
+    [authorizedModels, setAuthorizedModels] = useState<string[]>([]),
     [activeGatewayModel, setActiveGatewayModel] = useState('openrouter/auto'),
     [isSmartRouting, setIsSmartRouting] = useState(false),
     [modelsLoading, setModelsLoading] = useState(false),
@@ -247,6 +248,7 @@ export default function Workspace({
     try {
       const data = await getOrbioModels(activeSession);
       setModelsCatalog(data.models);
+      setAuthorizedModels(data.authorized_models ?? []);
       setActiveGatewayModel(data.active_model);
       setIsSmartRouting(data.smart_routing);
     } catch {
@@ -583,21 +585,24 @@ export default function Workspace({
       setMessage(
         `Paired with companion on port ${paired.session.port}. This browser can reconnect automatically.`,
       );
-      const response = await fetch('/api/connections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enrollmentId: paired.snapshot.enrollment.id,
-          label: label.trim(),
-          port: paired.session.port,
-        }),
-      });
-      const data = (await response.json()) as {
-        error?: string;
-        connections: Connection[];
-      };
-      if (!response.ok) throw new Error(data.error);
-      setSaved(data.connections);
+      try {
+        const response = await fetch('/api/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enrollmentId: paired.snapshot.enrollment.id,
+            label: label.trim(),
+            port: paired.session.port,
+          }),
+        });
+        if (!response.ok) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error || 'Could not save this connection.');
+        }
+        await loadSaved();
+      } catch (error) {
+        setSavedError(error instanceof Error ? error.message : 'Connection label could not be saved.');
+      }
     } catch (error) {
       if (generation !== connectionGeneration.current) return;
       setConnectError(
@@ -712,12 +717,16 @@ export default function Workspace({
     setOrbioError('');
     try {
       const res = await linkOrbioWallet(current, address, action);
-      if (res.wallet) {
-        setOrbioUsage((prev) => prev ? { ...prev, wallet: res.wallet } : null);
+      const wallet = res.wallet;
+      if (action === 'disconnect') {
+        setOrbioUsage((prev) => prev ? { ...prev, wallet: null } : null);
+        setMessage('Wallet unlinked.');
+      } else if (wallet) {
+        setOrbioUsage((prev) => prev ? { ...prev, wallet } : null);
         setMessage(
-          action === 'disconnect'
-            ? 'Wallet unlinked.'
-            : `Robinhood wallet linked! Holdings: ${(Number(res.wallet.holdings) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $ORBIO`
+          wallet.available
+            ? `Robinhood wallet linked! Holdings: ${Number(wallet.holdings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $ORBIO`
+            : 'Robinhood wallet linked. Balance lookup is currently unavailable.'
         );
       }
       setWalletModalOpen(false);
@@ -789,8 +798,8 @@ export default function Workspace({
     try {
       const targetModel = enable
         ? 'openrouter/auto'
-        : modelsCatalog.find((m) => m.id !== 'openrouter/auto')?.id ||
-          'anthropic/claude-sonnet-4.5';
+        : modelsCatalog.find((m) => m.id !== 'openrouter/auto' && authorizedModels.includes(m.id))?.id ||
+          authorizedModels.find((model) => model !== 'openrouter/auto') || '';
       const res = await updateOrbioRouting(current, {
         activeModel: targetModel,
         smartRouting: enable,
@@ -2367,13 +2376,13 @@ export default function Workspace({
                         <div className="quota-stat-main">
                           <span className="quota-sub">Remaining Credits</span>
                           <span className="quota-number" style={{ color: '#00f0b5' }}>
-                            ${(Number(orbioUsage?.usage?.remaining_credits) || 0).toFixed(4)}
+                            {orbioUsage?.usage?.remaining_credits == null ? 'Unavailable' : `$${orbioUsage.usage.remaining_credits.toFixed(4)}`}
                           </span>
                         </div>
                         <div className="quota-stat-main" style={{ textAlign: 'right' }}>
                           <span className="quota-sub">Period Usage</span>
                           <span className="quota-number" style={{ fontSize: 20 }}>
-                            ${(Number(orbioUsage?.usage?.usage) || 0).toFixed(4)}
+                            {orbioUsage?.usage?.usage == null ? 'Unavailable' : `$${orbioUsage.usage.usage.toFixed(4)}`}
                           </span>
                         </div>
                       </div>
@@ -2383,7 +2392,7 @@ export default function Workspace({
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 6, color: 'var(--muted)' }}>
                           <span>Quota Utilization</span>
                           <span>
-                            {(Number(orbioUsage?.usage?.percent_used) || 0).toFixed(1)}%
+                            {orbioUsage?.usage?.percent_used == null ? 'Unavailable' : `${orbioUsage.usage.percent_used.toFixed(1)}%`}
                             {Number(orbioUsage?.usage?.total_credits) > 0 ? ` of $${(Number(orbioUsage?.usage?.total_credits) || 0).toFixed(2)}` : ''}
                           </span>
                         </div>
@@ -2399,14 +2408,17 @@ export default function Workspace({
 
                       {/* Rate limits & Key label */}
                       <div className="rate-limits-row">
+                        {!orbioUsage?.usage?.available && <span>Credit telemetry is unavailable.</span>}
+                        {orbioUsage?.usage?.available && orbioUsage.usage.rate_limits && <>
                         <span className="rate-limit-badge" title="Requests per minute rate limit">
                           <Zap size={13} style={{ color: '#00d2ff' }} />
-                          {orbioUsage?.usage?.rate_limits?.requests_per_minute ?? 120} req/min
+                          {orbioUsage.usage.rate_limits.requests_per_minute ?? 120} req/min
                         </span>
                         <span className="rate-limit-badge" title="Tokens per minute rate limit">
                           <Cpu size={13} style={{ color: '#a855f7' }} />
-                          {(Number(orbioUsage?.usage?.rate_limits?.tokens_per_minute) || 60000).toLocaleString()} tok/min
+                          {(orbioUsage.usage.rate_limits.tokens_per_minute ?? 60000).toLocaleString()} tok/min
                         </span>
+                        </>}
                         {orbioUsage?.usage?.label && (
                           <span className="rate-limit-badge" title="Key label">
                             <Key size={13} />
@@ -2441,12 +2453,14 @@ export default function Workspace({
                         <div className="quota-stat-main">
                           <span className="quota-sub">Verified Holdings</span>
                           <span className="quota-number" style={{ color: '#a855f7' }}>
-                            {(Number(orbioUsage?.wallet?.holdings) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}{' '}
-                            <span style={{ fontSize: 16, color: 'var(--primary)' }}>$ORBIO</span>
+                            {orbioUsage?.wallet?.holdings == null
+                              ? 'Unavailable'
+                              : <>{orbioUsage.wallet.holdings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}{' '}
+                                  <span style={{ fontSize: 16, color: 'var(--primary)' }}>$ORBIO</span></>}
                           </span>
                         </div>
                         <div className="quota-stat-main" style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                          <span style={{ fontSize: 11, color: '#00f0b5' }}>● Scans Blockscout every 3m</span>
+                          <span style={{ fontSize: 11, color: '#00f0b5' }}>● Refreshes Robinhood Chain every 3m</span>
                         </div>
                       </div>
 
@@ -2627,6 +2641,7 @@ export default function Workspace({
                         <p>
                           Select which frontier model powers your local gateway (`http://127.0.0.1:{orbio.gateway?.port ?? 8091}/v1`), or activate OpenRouter’s dynamic auto-router.
                         </p>
+                        <p>Models require access from an active owner gateway credential before they can be selected.</p>
                       </div>
                       <div className="smart-routing-card">
                         <div className="smart-routing-info">
@@ -2643,7 +2658,11 @@ export default function Workspace({
                         <Button
                           variant={isSmartRouting ? 'default' : 'outline'}
                           size="sm"
-                          disabled={updatingRouting}
+                          disabled={updatingRouting || (
+                            isSmartRouting
+                              ? !authorizedModels.some((model) => model !== 'openrouter/auto')
+                              : !authorizedModels.includes('openrouter/auto')
+                          )}
                           onClick={() => void handleToggleSmartRouting(!isSmartRouting)}
                         >
                           {updatingRouting ? 'Updating…' : isSmartRouting ? 'Active (Auto)' : 'Enable Auto'}
@@ -2749,7 +2768,8 @@ export default function Workspace({
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      disabled={updatingRouting}
+                                      disabled={updatingRouting || !authorizedModels.includes(model.id)}
+                                      title={authorizedModels.includes(model.id) ? undefined : 'Approve this model in owner gateway setup first'}
                                       onClick={() => void handleSelectModel(model.id)}
                                     >
                                       Set as Default

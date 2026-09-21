@@ -523,7 +523,7 @@ class RealOrbioAdapter:
                 pass
         if account_reference:
             analytics = await self.fetch_usage_analytics(account_reference)
-            if analytics.get("available"):
+            if analytics.get("available") and analytics.get("remaining_credits") is not None:
                 balance = {
                     "available": True,
                     "amount": analytics.get("remaining_credits"),
@@ -581,6 +581,9 @@ class RealOrbioAdapter:
             return cached
 
         usage_val = 0.0
+        usage_known = False
+        remaining_known = False
+        observed = False
         total_credits_val = None
         remaining_val = 0.0
         limit_val = None
@@ -602,6 +605,9 @@ class RealOrbioAdapter:
                 resp_key = await client.get(ORBIO_AUTH_KEY_ENDPOINT, headers=headers)
                 if resp_key.status_code == 200:
                     k_data = resp_key.json().get("data", {})
+                    observed = observed or any(k_data.get(k) is not None for k in ("usage", "limit", "limit_remaining"))
+                    usage_known = usage_known or k_data.get("usage") is not None
+                    remaining_known = remaining_known or k_data.get("limit_remaining") is not None
                     usage_val = float(k_data.get("usage", 0.0) or 0.0)
                     limit_val = k_data.get("limit")
                     remaining_val = float(k_data.get("limit_remaining", 0.0) or 0.0)
@@ -616,6 +622,7 @@ class RealOrbioAdapter:
                 if resp_cred.status_code == 200:
                     c_data = resp_cred.json().get("data", {})
                     if "total_credits" in c_data and c_data["total_credits"] is not None:
+                        observed = True
                         total_credits_val = float(c_data["total_credits"])
 
                 # Query 3: Orbio v1/key endpoint for exact balance object and concurrency
@@ -624,8 +631,12 @@ class RealOrbioAdapter:
                     v1_data = resp_v1.json()
                     bal = v1_data.get("balance", {})
                     if "available" in bal:
+                        observed = True
+                        remaining_known = True
                         remaining_val = float(bal.get("available", remaining_val) or remaining_val)
                     if "used" in bal:
+                        observed = True
+                        usage_known = True
                         usage_val = float(bal.get("used", usage_val) or usage_val)
                     rd = v1_data.get("rate_limit", {})
                     if isinstance(rd, dict):
@@ -634,21 +645,35 @@ class RealOrbioAdapter:
         except Exception:
             pass
 
+        if not observed:
+            return {
+                "available": False,
+                "reason": "Credit telemetry could not be verified",
+                "usage": None,
+                "total_credits": None,
+                "remaining_credits": None,
+                "percent_used": None,
+                "limit": None,
+                "rate_limits": None,
+                "rate_limit": None,
+                "label": None,
+            }
+
         if total_credits_val is None:
             if limit_val is not None and float(limit_val) > 0:
                 total_credits_val = float(limit_val)
-            elif (remaining_val + usage_val) > 0:
+            elif remaining_known and usage_known:
                 total_credits_val = round(remaining_val + usage_val, 4)
 
         remaining = (
-            round(max(0.0, total_credits_val - usage_val), 4)
-            if total_credits_val is not None
-            else (round(remaining_val, 4) if remaining_val > 0 else 0.0)
+            round(remaining_val, 4) if remaining_known
+            else round(max(0.0, total_credits_val - usage_val), 4)
+            if total_credits_val is not None and usage_known else None
         )
         pct = (
             round(min(100.0, (usage_val / total_credits_val) * 100.0), 1)
-            if (total_credits_val and total_credits_val > 0)
-            else 0.0
+            if (total_credits_val and total_credits_val > 0 and usage_known)
+            else None
         )
 
         rate_limits = {
@@ -659,8 +684,8 @@ class RealOrbioAdapter:
 
         analytics = {
             "available": True,
-            "usage": round(usage_val, 4),
-            "total_credits": round(total_credits_val, 4) if total_credits_val is not None else 0.0,
+            "usage": round(usage_val, 4) if usage_known else None,
+            "total_credits": round(total_credits_val, 4) if total_credits_val is not None else None,
             "remaining_credits": remaining,
             "percent_used": pct,
             "limit": limit_val,
@@ -700,7 +725,7 @@ class RealOrbioAdapter:
         if cached is not None:
             return cached
 
-        holdings_val = 0.0
+        holdings_val = None
         network = "Robinhood Chain"
 
         # Query live $ORBIO ERC-20 balance on Robinhood Chain
@@ -733,36 +758,33 @@ class RealOrbioAdapter:
         except Exception:
             pass
 
-        tier_info = calculate_orbio_tier(holdings_val)
-        tier_number = (
-            3 if tier_info["tier"] == "sovereign"
-            else 2 if tier_info["tier"] == "builder"
-            else 1 if tier_info["tier"] == "explorer"
-            else 0
-        )
+        tier_info = calculate_orbio_tier(holdings_val) if holdings_val is not None else None
+        tier_number = {"sovereign": 3, "builder": 2, "explorer": 1}.get(tier_info["tier"], 0) if tier_info else None
 
         tier_perks = {
             "multiplier": tier_info["quota_multiplier"],
             "routing_priority": tier_info["features"][0] if tier_info["features"] else "Standard",
             "description": ", ".join(tier_info["features"]),
-        }
+        } if tier_info else None
 
         explorer_url = f"{ROBINHOOD_BLOCKSCOUT_URL}/token/{ROBINHOOD_ORBIO_CONTRACT}?a={wallet_address}"
 
         result = {
             "valid": True,
+            "available": holdings_val is not None,
+            "reason": None if holdings_val is not None else "Robinhood Chain balance lookup is unavailable",
             "network": network,
             "wallet_address": wallet_address,
             "masked_wallet": f"{wallet_address[:6]}...{wallet_address[-4:]}" if len(wallet_address) > 10 else wallet_address,
             "holdings": holdings_val,
             "explorer_url": explorer_url,
-            "tier": tier_info["tier"],
+            "tier": tier_info["tier"] if tier_info else None,
             "tier_level": tier_number,
-            "tier_name": tier_info["tier_name"],
-            "label": tier_info["label"],
-            "min_holdings": tier_info["min_holdings"],
-            "quota_multiplier": tier_info["quota_multiplier"],
-            "features": tier_info["features"],
+            "tier_name": tier_info["tier_name"] if tier_info else None,
+            "label": tier_info["label"] if tier_info else None,
+            "min_holdings": tier_info["min_holdings"] if tier_info else None,
+            "quota_multiplier": tier_info["quota_multiplier"] if tier_info else None,
+            "features": tier_info["features"] if tier_info else [],
             "tier_perks": tier_perks,
             "checked_at": self.clock(),
         }
@@ -825,5 +847,3 @@ class UnsupportedOrbioAdapter:
 
     async def fetch_wallet_holdings(self, wallet_address: str) -> dict[str, Any]:
         raise UnsupportedCapability("Orbio wallet holdings has not been verified")
-
-

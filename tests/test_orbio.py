@@ -238,6 +238,33 @@ async def test_fetch_usage_analytics_unconfigured():
 
 
 @pytest.mark.asyncio
+async def test_network_failure_does_not_report_zero_credits_or_holdings():
+    def offline(request: httpx.Request):
+        raise httpx.ConnectError("offline", request=request)
+
+    adapter = RealOrbioAdapter(transport=httpx.MockTransport(offline))
+    usage = await adapter.fetch_usage_analytics("sk-or-v1-test-key-12345678")
+    assert usage["available"] is False
+    assert usage["remaining_credits"] is None
+    wallet = await adapter.fetch_wallet_holdings("0x" + "1" * 40)
+    assert wallet["valid"] is True
+    assert wallet["available"] is False
+    assert wallet["holdings"] is None
+    assert wallet["tier"] is None
+
+
+@pytest.mark.asyncio
+async def test_verified_zero_wallet_balance_is_still_available():
+    adapter = RealOrbioAdapter(transport=httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"jsonrpc": "2.0", "result": "0x0"}
+    )))
+    wallet = await adapter.fetch_wallet_holdings("0x" + "2" * 40)
+    assert wallet["available"] is True
+    assert wallet["holdings"] == 0.0
+    assert wallet["tier"] == "community"
+
+
+@pytest.mark.asyncio
 async def test_fetch_usage_analytics_mocked():
     def handler(request: httpx.Request):
         if "auth/key" in str(request.url):

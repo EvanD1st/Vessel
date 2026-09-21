@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
-      - run: npm run test:pairing
+      - run: npm run test:unit
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
@@ -91,6 +91,22 @@ jobs:
         with:
           name: vessel-dashboard-release
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: vessel-extension-vsix
+          path: release/extension
+      - name: Add the tested VSIX to the dashboard download
+        run: |
+          version=$(node -p "require('./vscode-extension/package.json').version")
+          vsix="release/extension/vessel-companion-${version}.vsix"
+          test -s "$vsix"
+          mkdir -p release/content
+          tar -xzf release/vessel-dashboard-release.tar.gz -C release/content
+          mkdir -p release/content/public/downloads
+          cp "$vsix" release/content/public/downloads/vessel.vsix
+          mkdir -p release/content/dist/client/downloads
+          cp "$vsix" release/content/dist/client/downloads/vessel.vsix
+          tar -czf release/vessel-dashboard-release.tar.gz -C release/content .
       - name: Deploy tested release to the dedicated VESSEL service
         env:
           VESSEL_SSH_KEY: ${{ secrets.VESSEL_DEPLOY_SSH_KEY }}

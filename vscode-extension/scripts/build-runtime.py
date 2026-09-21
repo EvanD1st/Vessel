@@ -25,6 +25,8 @@ requirements = "\n".join(line for line in lock.read_text().splitlines() if line.
 (destination / "requirements.txt").write_text(requirements + "\n")
 wheelhouse = destination / "wheels"
 wheelhouse.mkdir(exist_ok=True)
+for old_wheel in wheelhouse.glob("vessel_continuity-*.whl"):
+    old_wheel.unlink()
 # Pure-Python wheel with deterministic bytes; no build backend downloads or user venv changes.
 project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
 version = project["version"]

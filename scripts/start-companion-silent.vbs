@@ -7,12 +7,12 @@ Dim WshShell, command, pythonwPath, statePath, fso
 Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
-pythonwPath = "C:\Users\USER\AppData\Local\Programs\Python\Python314\pythonw.exe"
-statePath = "C:\Users\USER\AppData\Local\VESSEL\projects\6d192de427b15783"
-
-If Not fso.FileExists(pythonwPath) Then
-    pythonwPath = "pythonw.exe"
+If WScript.Arguments.Count < 2 Then
+    WScript.Quit 1
 End If
+pythonwPath = WScript.Arguments(0)
+statePath = WScript.Arguments(1)
+If Not fso.FileExists(pythonwPath) Or Not fso.FolderExists(statePath) Then WScript.Quit 1
 
 command = """" & pythonwPath & """ -m vessel.desktop --state """ & statePath & """"
 WshShell.Run command, 0, False

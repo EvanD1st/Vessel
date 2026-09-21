@@ -294,6 +294,7 @@ export async function getOrbioModels(session: Session): Promise<{
   active_model: string;
   gateway_models: string[];
   smart_routing: boolean;
+  authorized_models: string[];
 }> {
   return companion(session, '/v1/orbio/models');
 }
@@ -327,10 +328,10 @@ export type OrbioUsageAnalytics = {
   has_key: boolean;
   usage: {
     available: boolean;
-    usage?: number;
-    total_credits?: number;
-    remaining_credits?: number;
-    percent_used?: number;
+    usage?: number | null;
+    total_credits?: number | null;
+    remaining_credits?: number | null;
+    percent_used?: number | null;
     rate_limits?: {
       requests_per_minute?: number;
       tokens_per_minute?: number;
@@ -339,14 +340,16 @@ export type OrbioUsageAnalytics = {
     label?: string | null;
     reason?: string;
   };
-  wallet: OrbioWalletInfo;
+  wallet: OrbioWalletInfo | null;
 };
 
 export type OrbioWalletInfo = {
   wallet_address: string | null;
-  holdings: number;
-  tier: number | string;
-  tier_name: string;
+  holdings: number | null;
+  available?: boolean;
+  reason?: string | null;
+  tier: number | string | null;
+  tier_name: string | null;
   network?: string;
   explorer_url?: string;
   checked_at?: number;
@@ -369,7 +372,7 @@ export async function linkOrbioWallet(
   action: 'connect' | 'disconnect' = 'connect',
 ): Promise<{
   status: string;
-  wallet: OrbioWalletInfo;
+  wallet?: OrbioWalletInfo;
 }> {
   return companion(
     session,
@@ -499,5 +502,3 @@ export function parseIdentityPass(input: string): OperatorIdentityCard {
 
   return card as OperatorIdentityCard;
 }
-
-

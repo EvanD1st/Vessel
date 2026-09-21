@@ -1,18 +1,28 @@
 import { env } from 'cloudflare:workers';
 import { connectionDb } from '@/db';
-import { readBody, requestOrigin } from '@/lib/request-body';
+import { readBody } from '@/lib/request-body';
 
 export const dynamic = 'force-dynamic';
 
 const json = (data: unknown, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 
-export async function POST(request: Request) {
-  if (requestOrigin(request) !== new URL(request.url).origin &&
-      requestOrigin(request) !== (env.VESSEL_AUTH_URL ? new URL(env.VESSEL_AUTH_URL).origin : '')) {
-    // origin check
-  }
+const resetMessage = 'If an account exists with this email, a reset authorization link has been dispatched to your inbox.';
 
+async function resetBucket(db: ReturnType<typeof connectionDb>, key: string, limit: number) {
+  const now = Date.now();
+  const expired = now - 60 * 60 * 1000;
+  const result = await db.prepare(
+    `INSERT INTO rate_limit (id, key, count, last_request) VALUES (?, ?, 1, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       count = CASE WHEN last_request <= ? THEN 1 ELSE count + 1 END,
+       last_request = CASE WHEN last_request <= ? THEN excluded.last_request ELSE last_request END
+     RETURNING count`,
+  ).bind(key, key, now, expired, expired).first<{ count: number }>();
+  return !!result && result.count <= limit;
+}
+
+export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
     body = await readBody(request);
@@ -32,16 +42,20 @@ export async function POST(request: Request) {
 
   try {
     const db = connectionDb();
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
+    const emailKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const ipAllowed = await resetBucket(db, `reset-ip:${ip}`, 10);
+    if (!ipAllowed) return json({ success: true, message: resetMessage });
+    const emailAllowed = await resetBucket(db, `reset-email:${emailKey}`, 3);
+    if (!emailAllowed) return json({ success: true, message: resetMessage });
     const user = await db
       .prepare('SELECT id, email, name FROM user WHERE email = ?')
       .bind(email)
       .first<{ id: string; email: string; name: string }>();
 
     if (!user) {
-      return json({
-        success: true,
-        message: 'If an account exists with this email, a reset link has been dispatched.',
-      });
+      return json({ success: true, message: resetMessage });
     }
 
     const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
@@ -109,10 +123,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return json({
-      success: true,
-      message: 'If an account exists with this email, a reset authorization link has been dispatched to your inbox.',
-    });
+    return json({ success: true, message: resetMessage });
   } catch (err) {
     console.error('Password reset request failed:', err);
     return json({ error: 'Could not process reset request. Try again shortly.' }, 503);

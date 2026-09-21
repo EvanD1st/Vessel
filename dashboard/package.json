@@ -12,6 +12,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "test:pairing": "node --test tests/pairing.test.mjs",
+    "test:unit": "node --test tests/pairing.test.mjs tests/orbio.test.mjs tests/identity.test.mjs tests/auth-routes.test.mjs",
     "test:orbio": "node --test tests/orbio.test.mjs",
     "test:setup-guide": "playwright test",
     "test:selfhost": "node tests/selfhost-smoke.mjs",

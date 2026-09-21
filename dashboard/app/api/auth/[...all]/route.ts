@@ -18,11 +18,15 @@ export function handleAuth(req: Request) {
   // Caddy overwrites this header with the remote address. Missing edge metadata
   // shares one rate bucket; it never disables login limits.
   if (!headers.get('cf-connecting-ip')) headers.set('cf-connecting-ip', '0.0.0.0');
-  return dashboardAuth().handler(new Request(req.url, {
+  const init: RequestInit & { duplex?: 'half' } = {
     method: req.method,
     headers,
-    body: req.body
-  }));
+  };
+  if (req.body && req.method !== 'GET' && req.method !== 'HEAD') {
+    init.body = req.body;
+    init.duplex = 'half';
+  }
+  return dashboardAuth().handler(new Request(req.url, init));
 }
 
 export const GET = handleAuth;

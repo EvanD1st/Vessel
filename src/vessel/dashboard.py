@@ -50,6 +50,22 @@ def approved_origin(value):
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def gateway_model_grants(service, conn=None):
+    """Current model sets usable by issued credentials for the local gateway."""
+    policy = service.store.get("control", "policy", conn=conn) or {}
+    lease = service.store.get("control", "lease", conn=conn) or {}
+    allowed = set(policy.get("allowed_models") or [])
+    return [
+        set(credential.get("allowed_models") or []) & allowed
+        for credential in service.store.list("gateway_credentials", conn=conn)
+        if not credential.get("revoked")
+        and credential.get("route_id") == "default"
+        and credential.get("policy_revision") == policy.get("revision")
+        and credential.get("execution_epoch") == lease.get("execution_epoch")
+        and lease.get("expires_at", 0) > service.clock()
+    ]
+
+
 def create_app(
     state_dir: Path,
     *,
@@ -275,7 +291,7 @@ def create_app(
 
         balance_obj = conn_status.get("balance")
         if not balance_obj or not balance_obj.get("available"):
-            if usage_data.get("available"):
+            if usage_data.get("available") and usage_data.get("remaining_credits") is not None:
                 balance_obj = {
                     "available": True,
                     "amount": usage_data.get("remaining_credits"),
@@ -514,6 +530,7 @@ def create_app(
             check_enrollment(service)
             secret = service.store.get("secrets", "orbio_credential")
             gateway_cfg = service.store.get("control", extension_gateway.CONTROL) or {}
+            grants = gateway_model_grants(service)
 
         key = secret.get("key") if secret else None
         catalog = await adapter.fetch_model_catalog(key)
@@ -526,6 +543,7 @@ def create_app(
             "active_model": active,
             "gateway_models": models_cfg,
             "smart_routing": smart_routing,
+            "authorized_models": sorted(set().union(*grants)) if grants else [],
         }
 
     @app.post("/v1/orbio/routing")
@@ -548,13 +566,24 @@ def create_app(
         else:
             if not active_model:
                 return JSONResponse({"error": "active_model is required when smart_routing is disabled"}, status_code=400)
-            fallbacks = [str(m).strip() for m in body.get("fallback_models", []) if isinstance(m, str) and m.strip()]
+            requested_fallbacks = body.get("fallback_models") or []
+            if not isinstance(requested_fallbacks, list) or len(requested_fallbacks) > 2:
+                return JSONResponse({"error": "At most two fallback models are allowed"}, status_code=400)
+            fallbacks = [m.strip() for m in requested_fallbacks if isinstance(m, str) and m.strip()]
             new_models = list(dict.fromkeys([active_model] + fallbacks))
+
+        if any(len(model) > 256 or any(ord(ch) < 32 for ch in model) for model in new_models):
+            return JSONResponse({"error": "Invalid model identifier"}, status_code=400)
 
         with VesselSession(state_dir, clock=clock) as service:
             check_enrollment(service)
             with service.store.transaction() as conn:
                 service._writable(conn)
+                if not any(set(new_models) <= grant for grant in gateway_model_grants(service, conn)):
+                    return JSONResponse(
+                        {"error": "These models are not authorized by an active gateway credential. Review model access in the owner setup before changing routing."},
+                        status_code=403,
+                    )
                 secret = service.store.get("secrets", "orbio_credential", conn=conn)
                 current_cfg = service.store.get("control", extension_gateway.CONTROL, conn=conn) or {
                     "schema": 1,
@@ -573,7 +602,10 @@ def create_app(
             if raw_key and not current_cfg.get("paused"):
                 extension_gateway.launch(state_dir, raw_key)
         except Exception:
-            pass
+            return JSONResponse(
+                {"error": "Routing was saved, but the gateway could not restart. Check gateway status before inference."},
+                status_code=503,
+            )
 
         adapter.clear_cache()
         return {
@@ -652,7 +684,10 @@ def create_app(
         return {
             "status": "linked",
             "wallet": wallet_info,
-            "message": f"Robinhood wallet linked. Tier: {wallet_info.get('tier_name')}",
+            "message": (
+                f"Robinhood wallet linked. Tier: {wallet_info['tier_name']}"
+                if wallet_info.get("available") else "Robinhood wallet linked; balance lookup is unavailable"
+            ),
         }
 
     @app.post("/v1/actions")

@@ -332,7 +332,11 @@ def test_orbio_credentials_lifecycle(project):
         assert status_after["masked_key"] is None
 
 
-def test_orbio_claim_and_models_and_routing(bridge):
+def test_orbio_claim_and_models_and_routing(bridge, project, monkeypatch):
+    service = project[0]
+    service.policy(allowed_models=["fixture-model", "openrouter/auto", "anthropic/claude-sonnet-4.5"])
+    service.heartbeat(project[2]["id"], project[2]["execution_epoch"], revalidate=True)
+    service.issue_gateway_credential("default", ["openrouter/auto", "anthropic/claude-sonnet-4.5"])
     # Claim without MCP returns mcp_not_configured
     claim_res = bridge.post("/v1/orbio/claim", json={"name": "test-claim"})
     assert claim_res.status_code == 200
@@ -345,6 +349,7 @@ def test_orbio_claim_and_models_and_routing(bridge):
     assert len(data["models"]) >= 8
     assert "openrouter/auto" in [m["id"] for m in data["models"]]
     assert "active_model" in data
+    assert data["authorized_models"] == ["anthropic/claude-sonnet-4.5", "openrouter/auto"]
 
     # Update routing to smart routing
     route_res = bridge.post("/v1/orbio/routing", json={"active_model": "openrouter/auto", "smart_routing": True})
@@ -359,6 +364,20 @@ def test_orbio_claim_and_models_and_routing(bridge):
     assert route_res2.status_code == 200
     assert route_res2.json()["active_model"] == "anthropic/claude-sonnet-4.5"
     assert route_res2.json()["smart_routing"] is False
+
+    denied = bridge.post("/v1/orbio/routing", json={"active_model": "deepseek/deepseek-r1", "smart_routing": False})
+    assert denied.status_code == 403
+    assert service.store.get("control", "extension_gateway")["models"] == ["anthropic/claude-sonnet-4.5"]
+
+    service.store.put("secrets", "orbio_credential", {"key": "test-only-key"})
+
+    def cannot_start(*args, **kwargs):
+        raise RuntimeError("simulated launch failure")
+
+    monkeypatch.setattr("vessel.extension_gateway.launch", cannot_start)
+    failed_restart = bridge.post("/v1/orbio/routing", json={"active_model": "openrouter/auto", "smart_routing": True})
+    assert failed_restart.status_code == 503
+    assert "could not restart" in failed_restart.json()["error"]
 
 
 def test_orbio_usage_and_wallet(bridge):
@@ -395,5 +414,3 @@ def test_orbio_usage_and_wallet(bridge):
     # 7. Usage no longer includes wallet
     u_res3 = bridge.get("/v1/orbio/usage")
     assert u_res3.json()["wallet"] is None
-
-

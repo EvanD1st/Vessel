@@ -28,6 +28,7 @@ if [[ ! -d "$target" ]]; then
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$archive_list"; then echo 'Unsafe archive path'; exit 1; fi
   tar -xzf "$archive" -C "$target" --no-same-owner
   [[ -f "$target/server.js" ]] || { echo 'Missing standalone server'; exit 1; }
+  [[ -s "$target/public/downloads/vessel.vsix" ]] || { echo 'Missing extension download'; exit 1; }
   chown -R root:root "$target"
 fi
 database=/var/lib/vessel-dashboard/account.sqlite3
@@ -45,7 +46,8 @@ ready=0
 for attempt in {1..40}; do
   # Account session endpoints intentionally reject direct loopback origins.
   # The public reverse proxy is validated after this private service check.
-  if curl --fail --silent --output /dev/null http://127.0.0.1:8092/setup-guide; then
+  if curl --fail --silent --output /dev/null http://127.0.0.1:8092/setup-guide &&
+     curl --fail --silent --head --output /dev/null http://127.0.0.1:8092/downloads/vessel.vsix; then
     ready=1; break
   fi
   sleep 1

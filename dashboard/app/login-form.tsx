@@ -73,7 +73,10 @@ export default function LoginForm() {
                 const result = (await response.json()) as { error?: string };
                 if (!response.ok)
                   throw new Error(result.error || 'Could not sign in.');
-                window.location.assign('/');
+                const connection = /^#connect=\d{4,5}:[A-Za-z0-9_-]{32,128}$/.test(window.location.hash)
+                  ? window.location.hash
+                  : '';
+                window.location.assign('/' + connection);
               } catch (failure) {
                 setError(
                   failure instanceof Error

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vessel-continuity"
-version = "0.5.0"
+version = "0.5.1"
 description = "Local continuity and reviewed recovery for VS Code + Cline"
 readme = "README.md"
 requires-python = ">=3.11"
